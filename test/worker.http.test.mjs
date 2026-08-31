@@ -136,6 +136,62 @@ test("the page's CSP nonce matches the one stamped on its own inline script and 
   assert.doesNotMatch(body, /document\.open\s*\(/, "same reason");
 });
 
+// ── the theme, asserted against the SERVED document ────────────────────────────────────────
+//
+// This page is the donor: weekly-training-plan's design-system reference sends every plan
+// artifact here to lift the palette, so a state dropped in a re-lift is a state dropped in next
+// week's artifact too. Nothing else looks at this file -- mac-upkeep's design_token_drift task
+// diffs the Hermes box's tokens.css against the live design.md and never opens src/app.html --
+// which is why these are commands rather than a comment.
+test("the served page carries all three theme states, with color-scheme pinned on both stamps", async () => {
+  const res = await fetch(`${BASE}/`);
+  const body = await res.text();
+
+  // Block 1 is the only one that paints for a reader who has never chosen, and it hands the
+  // scheme to the OS because nothing has overruled it.
+  assert.match(body, /:root\{[^}]*color-scheme:\s*light dark/, "block 1 must declare both schemes");
+  assert.match(body, /@media \(prefers-color-scheme: dark\)\{\s*:root:not\(\[data-theme=light\]\)/,
+    "block 2 must be the media query, guarded against the light stamp");
+
+  // The two stamped states overrule the OS, so each has to TELL the UA which it is. Unpinned,
+  // forcing one on a device set to the other leaves the scrollbars and form controls behind.
+  assert.match(body, /:root\[data-theme=dark\]\{[^}]*color-scheme:\s*dark/,
+    "the dark stamp must pin color-scheme:dark");
+  assert.match(body, /:root\[data-theme=light\]\{[^}]*color-scheme:\s*light/,
+    "the light stamp must pin color-scheme:light");
+
+  // ...and the light stamp must carry that AND NOTHING ELSE. A fourth copy of the light token
+  // list would be a copy with no runtime reason to exist: block 1 already supplies those values.
+  const lightStamp = body.match(/:root\[data-theme=light\]\{([^}]*)\}/)?.[1] ?? "";
+  assert.doesNotMatch(lightStamp, /--/, "the light stamp must declare no tokens of its own");
+});
+
+test("the theme control offers three states and can get back to the un-stamped one", async () => {
+  const res = await fetch(`${BASE}/`);
+  const body = await res.text();
+
+  // Three, not two. A two-state toggle stamps on its first press and can never return the
+  // reader to "follow the system" for the life of that browser.
+  for (const v of ["system", "light", "dark"]) {
+    assert.match(body, new RegExp(`<input type="radio" name="theme" id="theme-${v}" value="${v}"`),
+      `the control must offer ${v}`);
+  }
+  // The un-stamped state is the ABSENCE of the attribute, so removing it is the whole of it.
+  assert.match(body, /removeAttribute\("data-theme"\)/,
+    "choosing system must remove the attribute rather than stamp a third value");
+
+  // The document is served un-stamped. Anything else would make block 1 unreachable.
+  assert.match(body, /<html lang="en">/, "the served document must stamp no theme of its own");
+
+  // Every option is nameable. Two are a mark alone -- the mark set ships a sun and a moon and
+  // nothing meaning "follow the system", which is why that one is a word instead.
+  for (const name of ["System", "Light", "Dark"]) {
+    assert.match(body, new RegExp(`>${name}</`), `${name} must be readable to a screen reader`);
+  }
+  assert.doesNotMatch(body, /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u,
+    "a state the mark set has no mark for is drawn as a word, never an emoji");
+});
+
 test("GET /s is refused -- the app is not reachable without a POSTed launch", async () => {
   await assertDenied(await fetch(`${BASE}/s`), "GET /s");
 });

@@ -19,12 +19,27 @@
   Do not split this back into two documents.
 
   DESIGN: the calvin.sg design system, the same fifteen tokens the weekly artifact is drawn in.
-    - NO RAW HEX outside the three palette blocks below.
-    - The site defines its tokens ONLY under [data-theme=...]. An embedded page has a THIRD state
-      -- the viewer's default "system" setting stamps nothing -- so the palette is restated across
-      bare :root, @media (prefers-color-scheme: dark), and :root[data-theme=dark]. This is
-      deliberate. Do NOT "fix" it by deleting the bare :root; that is the only block that paints
-      for a viewer who has never chosen a theme.
+    - NO RAW HEX outside the three palette blocks below. System colours in the forced-colours
+      block are not hex and are the one thing a token cannot say.
+    - The site defines its tokens ONLY under [data-theme=...]. This page has a THIRD state --
+      nothing stamped, which is what a reader who has never chosen a theme is in -- so the
+      palette is restated across bare :root, @media (prefers-color-scheme: dark), and
+      :root[data-theme=dark]. This is deliberate. Do NOT "fix" it by deleting the bare :root;
+      that is the only block that paints for a reader who has never chosen.
+    - color-scheme IS PINNED IN BOTH STAMPED STATES, and here that is load-bearing rather than
+      defensive. Block 1 declares BOTH schemes, which hands the choice to the OS -- right for
+      the un-stamped state, wrong for the two the control at the foot of this page stamps,
+      where the page has overruled the OS and the UA has not been told. Unpinned, forcing light
+      on a dark phone is a light page with dark scrollbars and dark form controls.
+    - THE THIRD STATE IS A STATE THE READER CAN BE IN, so the control offers three and not two.
+      A two-state toggle stamps on its first press and can never get back to "follow the
+      system" for the life of that browser. The three blocks below already ARE the three
+      states: stamp dark, stamp light, or REMOVE the attribute. There is no second palette to
+      write and no matchMedia listener to keep, because block 2 is a media query -- an OS that
+      changes under an un-stamped page is handled in CSS with no script running at all.
+    - THIS PAGE IS THE DONOR. weekly-training-plan's design-system reference sends every plan
+      artifact here to lift the palette, because it is the same system already shaped for an
+      embedded page. A defect here is copied into next week's artifact.
 -->
 <style nonce="__NONCE__">
 /* ── palette, block 1 of 3: bare :root. Light, and the un-stamped default. ──────────────── */
@@ -56,7 +71,14 @@
   --status-live:#f3a3aa; --status-halo:#f9cdd3; --brand-ink:#f3a3aa;
   --sport-ride:#f3a3aa; --sport-ride-on-ink:#a82334;
   --sport-run:#9fc0f0;  --sport-run-on-ink:#1f4e9c;
+  color-scheme:dark;
 }
+/* The light stamp takes color-scheme AND NOTHING ELSE. Its VALUES already resolve correctly --
+   block 1 supplies them, and block 2 is suppressed by its own :not([data-theme=light]) guard --
+   so a fourth copy of the light token list would be a copy with no runtime reason to exist,
+   which is the one thing the design system forbids outright. Specificity needs no reordering:
+   this is (0,2,0) and beats block 1's bare :root. */
+:root[data-theme=light]{ color-scheme:light; }
 
 /* ── derived, as the site derives them ─────────────────────────────────────────────────── */
 :root{
@@ -133,14 +155,155 @@ dd{margin:0; font-size:.9375rem; overflow-wrap:anywhere}
 footer{margin-top:1.5rem; color:var(--quieter); font-size:.6875rem}
 
 :focus-visible{outline:2px solid var(--accent); outline-offset:2px; border-radius:2px}
+
+/* ── the theme control ─────────────────────────────────────────────────────────────────────
+   THE SITE'S `chip` AND `chip-icon`, WRITTEN OUT. The classes do not travel -- this page loads
+   no stylesheet from calvin.sg and never could -- so what transfers is the vocabulary: the
+   quiet surface at a hairline of the ink, no plate, 2.75rem on both axes, and the inverted fill
+   for the option that is current. The plate is this design's mark for a page's ONE action, and
+   setting a preference is furniture, so furniture recedes and the number stays the loudest
+   thing on the screen. It sits at the FOOT for the same reason: at 6am the plan is what the
+   eye and the keyboard should meet first.
+
+   THREE EXCLUSIVE STATES ARE NOT A TOGGLE BUTTON. The site's control reports a pressed state,
+   which is right for two; the WAI-ARIA pattern for a set of three is the radio group. These
+   are native radios, so the grouping, the checked state and the arrow-key roving are the
+   platform's rather than a re-implementation of them, and the label is the whole target.
+
+   THE MARK SET IS CLOSED. It ships a sun and a moon and nothing that means "follow the
+   system", so that option is drawn as a WORD -- never an emoji, never a second icon family. */
+.sr-only,.theme input{
+  position:absolute; width:1px; height:1px; padding:0; margin:0; overflow:hidden;
+  clip-path:inset(50%); white-space:nowrap; border:0;
+}
+.chrome{margin-top:1.5rem}
+.theme{position:relative; display:flex; flex-wrap:wrap; gap:.5rem; border:0; margin:0; padding:0; min-inline-size:0}
+.theme label{
+  display:inline-flex; align-items:center; justify-content:center; gap:.4em;
+  /* 2.75rem on BOTH axes: the enhanced target size, in rem so it grows with the reader's own
+     text rather than pinning a box in pixels the text then outgrows. */
+  min-height:2.75rem; min-width:2.75rem; padding:.3rem .7rem;
+  border:1px solid var(--hairline); border-radius:2px;
+  background:var(--background); color:var(--text); cursor:pointer;
+  font-size:.75rem; font-weight:700; letter-spacing:.1em; text-transform:uppercase;
+  transition:color .3s cubic-bezier(.4,0,.2,1), background-color .3s cubic-bezier(.4,0,.2,1),
+             border-color .3s cubic-bezier(.4,0,.2,1);
+}
+/* The glyph box is PINNED where the labelled one is floored: a label comes from the vocabulary
+   and must be allowed to grow, a mark is a size the design picked. */
+.theme label.glyph{width:2.75rem; height:2.75rem; padding:0}
+.theme svg{width:1.25rem; height:1.25rem; display:block; fill:currentColor}
+/* Guarded, because a touch browser applies :hover on tap and holds it until something else is
+   tapped -- which would leave the last option pressed wearing the accent beside the one that is
+   genuinely current, faking the exact distinction this row exists to draw. */
+@media (hover: hover){
+  .theme label:hover{border-color:var(--accent); color:var(--accent)}
+}
+/* The current option, in the site's own inverted treatment. */
+.theme input:checked + label{background:var(--text); border-color:var(--text); color:var(--background)}
+/* A press shows something on EVERY option including the current one, and it SNAPS: a tap is
+   over in about 100ms against a 300ms ramp, so an eased press is drawn about a third of the way
+   and then undrawn. Below the checked rule on purpose, so the option you are already on also
+   answers the finger. */
+.theme label:active{border-color:var(--accent); color:var(--accent); transition:none}
+/* ...and the option you are already on keeps its readable ink, because accent on the --text
+   flood measures 2.77:1 light and 1.37:1 dark. The accent border still says the tap landed. */
+.theme input:checked + label:active{color:var(--background); transition:none}
+/* Focus gets its own rule and is never listed with hover: hover is a pointer's affordance and
+   some readers have no pointer. The ring goes on the label because the input is the 1px box. */
+.theme input:focus-visible + label{outline:2px solid var(--accent); outline-offset:2px}
+/* A forced-colours mode replaces every author colour, so the inverted fill -- the only thing
+   saying which option is current -- would arrive blank. The marks need nothing: they are inline
+   SVG filled with currentColor, not a mask over a background the mode overrides. */
+@media (forced-colors: active){
+  .theme input:checked + label{
+    forced-color-adjust:none; background:Highlight; border-color:CanvasText; color:HighlightText;
+  }
+}
+
 @media (prefers-reduced-motion: reduce){
   *,*::before,*::after{animation-duration:.01ms !important; animation-iteration-count:1 !important;
                        transition-duration:.01ms !important; scroll-behavior:auto !important}
 }
 </style>
+<script nonce="__NONCE__">
+// PRE-PAINT, AND IT HAS TO BE HERE. A stored choice applied after the first paint is a visible
+// flash of the other theme. This page owns its own <head>, which is the one thing a plan
+// artifact lifting this palette cannot do -- there, the restore goes first in the page content
+// and the flash is the price.
+//
+// It writes NOTHING when nothing is stored. The absent attribute is the third state, and the
+// two blocks above already paint it.
+(function () {
+  try {
+    var t = localStorage.getItem("theme");
+    if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
+  } catch (e) { /* Reading storage throws outright in some contexts. The page is correct with
+                   nothing stored, which is the same state as never having chosen. */ }
+})();
+</script>
 </head>
 <body>
 <main id="root" tabindex="-1"></main>
+
+<!-- The one piece of chrome, and the only markup on this page that is not drawn by the renderer:
+     it belongs to the reader rather than to the week, so it must be there before /s answers and
+     must survive every refusal. `system` is FIRST because it is the state the page opens in. -->
+<footer class="chrome">
+  <fieldset class="theme">
+    <legend class="sr-only">Theme</legend>
+    <input type="radio" name="theme" id="theme-system" value="system">
+    <label for="theme-system">System</label>
+    <input type="radio" name="theme" id="theme-light" value="light">
+    <label class="glyph" for="theme-light">
+      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 18C8.68629 18 6 15.3137 6 12C6 8.68629 8.68629 6 12 6C15.3137 6 18 8.68629 18 12C18 15.3137 15.3137 18 12 18ZM12 16C14.2091 16 16 14.2091 16 12C16 9.79086 14.2091 8 12 8C9.79086 8 8 9.79086 8 12C8 14.2091 9.79086 16 12 16ZM11 1H13V4H11V1ZM11 20H13V23H11V20ZM3.51472 4.92893L4.92893 3.51472L7.05025 5.63604L5.63604 7.05025L3.51472 4.92893ZM16.9497 18.364L18.364 16.9497L20.4853 19.0711L19.0711 20.4853L16.9497 18.364ZM19.0711 3.51472L20.4853 4.92893L18.364 7.05025L16.9497 5.63604L19.0711 3.51472ZM5.63604 16.9497L7.05025 18.364L4.92893 20.4853L3.51472 19.0711L5.63604 16.9497ZM23 11V13H20V11H23ZM4 11V13H1V11H4Z"/></svg>
+      <span class="sr-only">Light</span>
+    </label>
+    <input type="radio" name="theme" id="theme-dark" value="dark">
+    <label class="glyph" for="theme-dark">
+      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M10 7C10 10.866 13.134 14 17 14C18.9584 14 20.729 13.1957 21.9995 11.8995C22 11.933 22 11.9665 22 12C22 17.5228 17.5228 22 12 22C6.47715 22 2 17.5228 2 12C2 6.47715 6.47715 2 12 2C12.0335 2 12.067 2 12.1005 2.00049C10.8043 3.27098 10 5.04157 10 7ZM4 12C4 16.4183 7.58172 20 12 20C15.0583 20 17.7158 18.2839 19.062 15.7621C18.3945 15.9187 17.7035 16 17 16C12.0294 16 8 11.9706 8 7C8 6.29648 8.08133 5.60547 8.2379 4.938C5.71611 6.28423 4 8.9417 4 12Z"/></svg>
+      <span class="sr-only">Dark</span>
+    </label>
+  </fieldset>
+</footer>
+
+<script nonce="__NONCE__">
+(function () {
+  "use strict";
+
+  // The control, and nothing about the week. It is wired separately from the app below because
+  // it must keep working through every path that one takes -- including the two that render an
+  // error and return.
+  var root = document.documentElement;
+  var inputs = document.querySelectorAll(".theme input[name=theme]");
+
+  // SEEDED FROM WHAT IS ALREADY STAMPED, not from storage: the pre-paint script in <head> has
+  // already run, so the attribute IS the resolved answer, and reading it here means there is one
+  // place that decides what "current" means. Nothing is written until he chooses.
+  var t = root.getAttribute("data-theme");
+  var current = (t === "dark" || t === "light") ? t : "system";
+
+  function choose(value) {
+    // The un-stamped state is the ABSENCE of the attribute, which is why removing it is the
+    // whole of "follow the system" -- there is no third palette and no matchMedia listener,
+    // because block 2 is a media query and CSS re-resolves it on its own.
+    if (value === "system") root.removeAttribute("data-theme");
+    else root.setAttribute("data-theme", value);
+    try {
+      localStorage.setItem("theme", value);
+    } catch (e) { /* Storage throws outright in some contexts. A preference that cannot be
+                     remembered is still a preference that works for this visit. */ }
+  }
+
+  for (var i = 0; i < inputs.length; i++) {
+    inputs[i].checked = inputs[i].value === current;
+    inputs[i].addEventListener("change", function () {
+      if (this.checked) choose(this.value);
+    });
+  }
+})();
+</script>
+
 <script nonce="__NONCE__">
 (function () {
   "use strict";
