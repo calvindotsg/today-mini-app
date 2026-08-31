@@ -1,0 +1,14 @@
+{
+  "name": "today-mini-app",
+  "private": true,
+  "type": "module",
+  "description": "today.calvin.sg — a Telegram Mini App showing the next training session and the one after it",
+  "scripts": {
+    "test": "node --test test/",
+    "test:auth": "node --test test/worker.http.test.mjs",
+    "dev": "npx --yes wrangler@4.127.1 dev",
+    "deploy": "npx --yes wrangler@4.127.1 deploy",
+    "publish:week": "node scripts/publish.mjs"
+  },
+  "engines": { "node": ">=20" }
+}

@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Today</title>
+<!--
+  THE ONE SCREEN. Served only after the Worker has validated initData and matched the user id --
+  nothing in this file is reachable without that, which is why the data is inlined rather than
+  fetched: there is no second request to authorise, and no data endpoint to attack.
+
+  DESIGN: the calvin.sg design system, the same fifteen tokens the weekly artifact is drawn in.
+    - NO RAW HEX outside the three palette blocks below.
+    - The site defines its tokens ONLY under [data-theme=...]. An embedded page has a THIRD state
+      -- the viewer's default "system" setting stamps nothing -- so the palette is restated across
+      bare :root, @media (prefers-color-scheme: dark), and :root[data-theme=dark]. This is
+      deliberate. Do NOT "fix" it by deleting the bare :root; that is the only block that paints
+      for a viewer who has never chosen a theme.
+-->
+<style nonce="__NONCE__">
+/* ── palette, block 1 of 3: bare :root. Light, and the un-stamped default. ──────────────── */
+:root{
+  --background:#fafafa; --card-background:#f5f5f5; --card-border:#e5e5e5;
+  --shadow:#a82334; --accent:#a82334; --text:#0b0b0b;
+  --progress-fill:#a82334; --progress-track:#e3b3b8;
+  --status-live:#a82334; --status-halo:#a82334; --brand-ink:#a82334;
+  --sport-ride:#a82334; --sport-ride-on-ink:#f3a3aa;
+  --sport-run:#1f4e9c;  --sport-run-on-ink:#9fc0f0;
+  color-scheme:light dark;
+}
+/* ── palette, block 2 of 3: the viewer's system preference, with no attribute stamped. ──── */
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme=light]){
+    --background:#111111; --card-background:#171717; --card-border:#2c2c2c;
+    --shadow:#f3a3aa; --accent:#f9cdd3; --text:#fafafa;
+    --progress-fill:#f9cdd3; --progress-track:#462f32;
+    --status-live:#f3a3aa; --status-halo:#f9cdd3; --brand-ink:#f3a3aa;
+    --sport-ride:#f3a3aa; --sport-ride-on-ink:#a82334;
+    --sport-run:#9fc0f0;  --sport-run-on-ink:#1f4e9c;
+  }
+}
+/* ── palette, block 3 of 3: an explicit choice, which must beat the media query. ────────── */
+:root[data-theme=dark]{
+  --background:#111111; --card-background:#171717; --card-border:#2c2c2c;
+  --shadow:#f3a3aa; --accent:#f9cdd3; --text:#fafafa;
+  --progress-fill:#f9cdd3; --progress-track:#462f32;
+  --status-live:#f3a3aa; --status-halo:#f9cdd3; --brand-ink:#f3a3aa;
+  --sport-ride:#f3a3aa; --sport-ride-on-ink:#a82334;
+  --sport-run:#9fc0f0;  --sport-run-on-ink:#1f4e9c;
+}
+
+/* ── derived, as the site derives them ─────────────────────────────────────────────────── */
+:root{
+  --hairline:color-mix(in srgb, var(--text) 32%, transparent);
+  --quiet:  color-mix(in srgb, var(--text) 62%, transparent);
+  --quieter:color-mix(in srgb, var(--text) 42%, transparent);
+  --fill:   color-mix(in srgb, var(--text)  6%, transparent);
+  --radius-card:.5rem; --plate:2px 2px 0 var(--shadow);
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+}
+
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0; background:var(--background); color:var(--text);
+  font-family:var(--sans); font-size:1rem; line-height:1.5;
+  padding:1.25rem 1rem calc(2rem + env(safe-area-inset-bottom)) 1rem;
+  /* 320 px is the floor this must work at. Everything below sizes off the viewport, never a
+     fixed width, and the one long-word field (place) gets an explicit break. */
+  max-width:34rem; margin-inline:auto;
+}
+.mc{font-size:.625rem; font-weight:700; letter-spacing:.14em; text-transform:uppercase}
+
+header{display:flex; flex-wrap:wrap; gap:.5rem 1rem; align-items:baseline; margin-bottom:1rem}
+header .week{color:var(--quiet)}
+header .asof{color:var(--quieter); font-size:.75rem; margin-left:auto}
+
+/* The banner is the honesty surface. It appears ONLY when something is actually wrong, so its
+   presence is information -- a banner that is always there is furniture. */
+.banner{
+  border:1px solid var(--accent); border-radius:var(--radius-card);
+  background:var(--fill); padding:.75rem .875rem; margin-bottom:1.25rem;
+}
+.banner .mc{color:var(--accent); display:block; margin-bottom:.25rem}
+.banner p{margin:0; font-size:.875rem}
+
+.card{
+  border:1px solid var(--card-border); border-radius:var(--radius-card);
+  background:var(--card-background); padding:1.125rem 1rem; margin-bottom:1rem;
+}
+.card--now{box-shadow:var(--plate)}
+.kind{color:var(--accent); display:block; margin-bottom:.375rem}
+h1{font-size:1.375rem; line-height:1.25; margin:0 0 1rem 0; font-weight:600; letter-spacing:-.01em}
+
+/* THE NUMBER. The one element on this screen that has to be readable at arm's length at 6am,
+   which is the whole reason the app exists. It scales with the viewport and is capped so it
+   cannot wrap at 320 px. */
+.clock{margin:0 0 .875rem 0}
+.clock .label{color:var(--quiet); display:block; margin-bottom:.125rem}
+.clock time{
+  display:block; font-size:clamp(3rem, 17vw, 4.25rem); line-height:1;
+  font-weight:700; letter-spacing:-.03em; font-variant-numeric:tabular-nums;
+  color:var(--accent);
+}
+.clock .window{color:var(--quiet); font-size:.8125rem; margin-top:.375rem; display:block}
+
+dl{margin:0; display:grid; grid-template-columns:auto 1fr; gap:.375rem .75rem; align-items:baseline}
+dt{color:var(--quieter); white-space:nowrap}
+dd{margin:0; font-size:.9375rem; overflow-wrap:anywhere}
+
+.rule{border:0; border-top:1px solid var(--hairline); margin:1rem 0}
+.onerule{margin:0; font-size:1rem; line-height:1.45}
+.bring{margin:.75rem 0 0 0; padding:0; list-style:none; display:flex; flex-wrap:wrap; gap:.375rem}
+.bring li{border:1px solid var(--hairline); border-radius:2px; padding:.125rem .5rem; font-size:.8125rem}
+
+.next{display:flex; flex-wrap:wrap; gap:.25rem .625rem; align-items:baseline}
+.next .when{color:var(--accent); font-variant-numeric:tabular-nums; white-space:nowrap}
+.next .what{font-size:.9375rem}
+.later{color:var(--quieter); font-size:.8125rem; margin:.5rem 0 0 0}
+
+.why{color:var(--quiet); font-size:.875rem; line-height:1.55; margin:0}
+.why .mc{display:block; color:var(--quieter); margin-bottom:.25rem}
+
+footer{margin-top:1.5rem; color:var(--quieter); font-size:.6875rem}
+
+:focus-visible{outline:2px solid var(--accent); outline-offset:2px; border-radius:2px}
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation-duration:.01ms !important; animation-iteration-count:1 !important;
+                       transition-duration:.01ms !important; scroll-behavior:auto !important}
+}
+</style>
+</head>
+<body>
+<main id="root" tabindex="-1"></main>
+<script type="application/json" id="view" nonce="__NONCE__">__VIEW__</script>
+<script nonce="__NONCE__">
+(function () {
+  "use strict";
+
+  // Tell Telegram the app is up and ask for full height. telegram-web-app.js is deliberately NOT
+  // loaded: it is an external request this page is not allowed to make, and the two events it
+  // would send for us are one postMessage each. If the bridge is missing the app still renders --
+  // it just opens at the default half height. Cosmetic paths fail open.
+  function postEvent(type, data) {
+    var payload = JSON.stringify(data || {});
+    try {
+      if (window.TelegramWebviewProxy && window.TelegramWebviewProxy.postEvent) {
+        window.TelegramWebviewProxy.postEvent(type, payload); return;
+      }
+      if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.performAction) {
+        window.webkit.messageHandlers.performAction.postMessage({ eventType: type, eventData: data || {} }); return;
+      }
+      if (window.parent !== window) {
+        window.parent.postMessage(JSON.stringify({ eventType: type, eventData: data || {} }), "https://web.telegram.org");
+      }
+    } catch (e) { /* fail open */ }
+  }
+
+  var view;
+  try { view = JSON.parse(document.getElementById("view").textContent); }
+  catch (e) { view = { ok: false, error: "This page could not read its own data." }; }
+
+  var root = document.getElementById("root");
+
+  function el(tag, cls, text) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    // textContent everywhere. Nothing from the payload is ever parsed as HTML: the artifact's
+    // renderer has five fields it treats as raw markup and NONE of them are published here, so
+    // this page has no reason to ever hold that door open.
+    if (text !== undefined && text !== null) n.textContent = text;
+    return n;
+  }
+  function add(parent, node) { parent.appendChild(node); return node; }
+
+  function hhmm(iso) {
+    var m = /T(\d{2}):(\d{2})/.exec(iso || "");
+    return m ? m[1] + ":" + m[2] : null;
+  }
+  function dayLabel(s) {
+    var dow = (s.dow || "").slice(0, 3);
+    var d = /^(\d{4})-(\d{2})-(\d{2})/.exec(s.date || "");
+    if (!d) return dow;
+    var months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    return (dow ? dow + " " : "") + String(Number(d[3])) + " " + months[Number(d[2]) - 1];
+  }
+
+  function banner(kicker, body) {
+    var b = el("div", "banner");
+    b.setAttribute("role", "status");
+    add(b, el("span", "mc", kicker));
+    add(b, el("p", null, body));
+    return b;
+  }
+
+  function renderHeader() {
+    var h = el("header");
+    if (view.weekLabel) add(h, el("span", "week mc", view.weekLabel));
+    if (view.generatedAt) {
+      var t = el("span", "asof", "updated " + (hhmm(view.generatedAt) || "") + " " + (view.generatedAt || "").slice(0, 10));
+      add(h, t);
+    }
+    return h;
+  }
+
+  function renderSession(s) {
+    var c = el("div", "card card--now");
+    add(c, el("span", "kind mc", s.kind));
+    add(c, el("h1", null, s.title));
+
+    // leaveBy is the point of this screen -- but it is present on 13 of 20 sessions in one real
+    // artifact and 0 of 17 in the other, so it CANNOT be assumed. Fall back to the start time,
+    // and when there is neither, show no clock at all rather than an empty one.
+    var big = hhmm(s.leaveBy), label = "Leave by";
+    if (!big) { big = hhmm(s.at); label = "Starts"; }
+    if (big) {
+      var clock = el("p", "clock");
+      add(clock, el("span", "label mc", label));
+      var time = el("time", null, big);
+      time.setAttribute("datetime", s.leaveBy || s.at);
+      add(clock, time);
+      var window_ = dayLabel(s);
+      var from = hhmm(s.at), to = hhmm(s.until);
+      if (from) window_ += " · " + from + (to ? "–" + to : "");
+      add(clock, el("span", "window", window_));
+      add(c, clock);
+    }
+
+    var dl = el("dl");
+    var any = false;
+    if (s.place)  { add(dl, el("dt", "mc", "Where")); add(dl, el("dd", null, s.place));  any = true; }
+    if (s.travel) { add(dl, el("dt", "mc", "Travel")); add(dl, el("dd", null, s.travel)); any = true; }
+    if (any) add(c, dl);
+
+    if (s.oneRule) {
+      add(c, el("hr", "rule"));
+      add(c, el("p", "onerule", s.oneRule));
+    }
+    if (Array.isArray(s.bring) && s.bring.length) {
+      var ul = el("ul", "bring");
+      ul.setAttribute("aria-label", "Bring");
+      for (var i = 0; i < s.bring.length; i++) add(ul, el("li", null, s.bring[i]));
+      add(c, ul);
+    }
+    return c;
+  }
+
+  function renderNext(s) {
+    var c = el("div", "card");
+    add(c, el("span", "kind mc", "Next"));
+    var row = el("p", "next");
+    var when = dayLabel(s);
+    var t = hhmm(s.at);
+    if (t) when += " · " + t;
+    add(row, el("span", "when", when));
+    add(row, el("span", "what", s.title));
+    add(c, row);
+    if (view.laterCount > 0) {
+      add(c, el("p", "later", view.laterCount === 1
+        ? "1 more after that in the next three days."
+        : view.laterCount + " more after that in the next three days."));
+    }
+    return c;
+  }
+
+  function render() {
+    root.textContent = "";
+
+    if (!view.ok) {
+      add(root, banner("Cannot show the plan", view.error || "Something is wrong with the published plan."));
+      return;
+    }
+
+    add(root, renderHeader());
+
+    // Two different kinds of out-of-date, reported separately. A plan pushed an hour ago for last
+    // week is fresh and useless; a plan for this week pushed four days ago is old and correct.
+    if (!view.coversToday) {
+      add(root, banner("Not this week", "The published plan runs " + view.weekStart + " to " + view.weekEnd +
+        ", so it says nothing about today (" + view.today + "). There is nothing here for today, and " +
+        "anything shown would be a guess."));
+    } else if (view.stale) {
+      var age = view.ageHours === null ? null : Math.round(view.ageHours);
+      add(root, banner("Possibly out of date", age === null
+        ? "This plan does not say when it was published, so how current it is cannot be established."
+        : "This plan was last published about " + age + " hours ago. It may not reflect a change made since."));
+    }
+
+    if (view.now) {
+      add(root, renderSession(view.now));
+      if (view.next) add(root, renderNext(view.next));
+      if (view.now.intention) {
+        var why = el("p", "why");
+        add(why, el("span", "mc", "Why this session"));
+        why.appendChild(document.createTextNode(view.now.intention));
+        add(root, why);
+      }
+    } else if (view.coversToday) {
+      add(root, banner(
+        view.emptyReason === "empty" ? "Nothing published" : "Nothing left",
+        view.emptyReason === "empty"
+          ? "The published plan contains no days at all."
+          : "Nothing is still to come in the next three days. Everything in that window is done, missed, or a rest by design."));
+    }
+
+    var f = el("footer", null, view.plannedKm
+      ? view.weekLabel + " · " + view.plannedKm + " km planned" + (view.ceilingKm ? " of a " + view.ceilingKm + " km ceiling" : "")
+      : view.weekLabel);
+    add(root, f);
+  }
+
+  render();
+  postEvent("web_app_ready");
+  postEvent("web_app_expand");
+})();
+</script>
+</body>
+</html>
