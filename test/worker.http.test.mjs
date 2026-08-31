@@ -40,7 +40,8 @@ before(async () => {
     generatedAt: new Date().toISOString().slice(0, 19) + "+08:00",
     meta: { weekLabel: "Test week", weekStart: "2000-01-01", weekEnd: "2099-12-31" },
     days: [{ date: new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10), dow: "Today",
-             sessions: [{ kind: "Run · test", title: "A test session", status: "planned" }] }],
+             sessions: [{ kind: "Run · test", title: "ZZTITLEZZ", status: "planned",
+                          place: "ZZPLACEZZ", leaveBy: "2099-01-01T05:55", oneRule: "ZZRULEZZ" }] }],
   };
   const { writeFileSync, mkdirSync } = await import("node:fs");
   mkdirSync(`${ROOT}/dist`, { recursive: true });
@@ -67,14 +68,14 @@ async function assertDenied(res, what) {
 
 // ── the plan's four cases ──────────────────────────────────────────────────────────────────
 
-test("valid initData for Calvin -> 200 and the app", async () => {
+test("valid initData for Calvin -> 200 and the week, as JSON", async () => {
   const res = await post(mintInitData({ userId: ALLOWED_ID }));
-  const body = await res.text();
   assert.equal(res.status, 200);
-  assert.match(body, /<title>Today<\/title>/);
-  assert.match(body, /A test session/, "the app must arrive with the plan already in it");
-  assert.match(res.headers.get("content-security-policy") ?? "", /script-src 'nonce-/);
-  assert.doesNotMatch(res.headers.get("content-security-policy") ?? "", /unsafe-inline/);
+  assert.match(res.headers.get("content-type") ?? "", /application\/json/);
+  const view = await res.json();
+  assert.equal(view.ok, true);
+  assert.equal(view.now.title, "ZZTITLEZZ", "the week must cross the boundary only here");
+  assert.equal(view.now.place, "ZZPLACEZZ");
 });
 
 test("valid signature, DIFFERENT user.id -> 401, no content", async () => {
@@ -102,14 +103,37 @@ test("initData signed with the wrong bot token -> 401, no content", async () => 
   await assertDenied(await post(mintInitData({ botToken: "999:not-the-bot" })), "wrong-bot");
 });
 
-test("GET / serves a shell that contains no plan and no design system", async () => {
+// THE PROPERTY THAT ACTUALLY MATTERS. The page is served to anyone -- it has to be, because
+// Telegram puts the launch in a URL fragment no server ever sees -- so what must be true is that
+// it carries NONE OF THE WEEK. Asserted against distinctive values seeded into KV, so a pass is a
+// measurement rather than a guess at what the plan's words look like.
+test("GET / carries the renderer but none of the week's content", async () => {
   const res = await fetch(`${BASE}/`);
   const body = await res.text();
   assert.equal(res.status, 200);
-  assert.doesNotMatch(body, /A test session/, "the unauthenticated shell must carry no plan");
-  assert.doesNotMatch(body, /leaveBy|oneRule|week-state/, "nor any of the plan's vocabulary");
-  assert.doesNotMatch(body, /--sport-run|--progress-track/, "nor the design system");
-  assert.ok(body.length < 4096, `the shell should stay tiny; it is ${body.length} bytes`);
+  for (const secret of ["ZZTITLEZZ", "ZZPLACEZZ", "ZZRULEZZ", "2099-01-01T05:55"]) {
+    assert.doesNotMatch(body, new RegExp(secret), `the unauthenticated page leaked ${secret}`);
+  }
+  assert.doesNotMatch(body, /week:current/, "nor the name of where the week lives");
+  assert.match(body, /<title>Today<\/title>/, "but it IS the app, not a stub");
+  assert.match(res.headers.get("content-security-policy") ?? "", /script-src 'nonce-/);
+  assert.doesNotMatch(res.headers.get("content-security-policy") ?? "", /unsafe-inline/);
+});
+
+// The regression control for the bug that made the page render blank: the page and the data it
+// fetches must be ONE document, so there is exactly one nonce in play.
+test("the page's CSP nonce matches the one stamped on its own inline script and style", async () => {
+  const res = await fetch(`${BASE}/`);
+  const body = await res.text();
+  const headerNonce = (res.headers.get("content-security-policy") ?? "").match(/nonce-([A-Za-z0-9]+)/)?.[1];
+  const bodyNonces = [...new Set([...body.matchAll(/nonce="([A-Za-z0-9]+)"/g)].map((m) => m[1]))];
+  assert.ok(headerNonce, "the response must carry a nonce");
+  assert.deepEqual(bodyNonces, [headerNonce], "every inline block must carry the header's nonce, and only it");
+  // The CALL form, not the words. A bare /document\.write/ matches the comment in app.html that
+  // explains why this must never come back -- an assertion that greps a whole file will happily
+  // fire on its own documentation.
+  assert.doesNotMatch(body, /document\.write\s*\(/, "a second document would get a second nonce and render blank");
+  assert.doesNotMatch(body, /document\.open\s*\(/, "same reason");
 });
 
 test("GET /s is refused -- the app is not reachable without a POSTed launch", async () => {
@@ -119,12 +143,11 @@ test("GET /s is refused -- the app is not reachable without a POSTed launch", as
 test("a launch with surrounding whitespace still validates", async () => {
   // A transport that appends a newline must not read as a forged launch.
   const res = await post("\n" + mintInitData({ userId: ALLOWED_ID }) + "\n");
-  const body = await res.text();
   assert.equal(res.status, 200);
-  assert.match(body, /<title>Today<\/title>/);
+  assert.equal((await res.json()).ok, true);
 });
 
-test("there is no data endpoint to find", async () => {
+test("there is no OTHER endpoint to find", async () => {
   for (const p of ["/payload.json", "/week", "/api/week", "/app.html", "/src/app.html", "/.dev.vars"]) {
     const res = await fetch(`${BASE}${p}`);
     const body = await res.text();

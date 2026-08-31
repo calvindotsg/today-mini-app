@@ -12,7 +12,6 @@
 
 import { validateInitData } from "./initdata.js";
 import { buildView } from "./view.js";
-import BOOTSTRAP_HTML from "./bootstrap.html";
 import APP_HTML from "./app.html";
 
 const KV_KEY = "week:current";
@@ -64,13 +63,6 @@ function html(body, n, status = 200) {
   });
 }
 
-// The view is injected into a <script type="application/json"> block, so the one sequence that
-// can break out of it is "</script" in any case. JSON.stringify cannot produce it from data
-// alone, but a title containing it could, so escape the "<" rather than trusting that.
-function embedJson(value) {
-  return JSON.stringify(value).replace(/</g, "\\u003c");
-}
-
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -81,9 +73,15 @@ export default {
     const configured = typeof env.BOT_TOKEN === "string" && env.BOT_TOKEN.length > 0
       && typeof env.ALLOWED_USER_ID === "string" && /^\d+$/.test(env.ALLOWED_USER_ID);
 
+    // ONE DOCUMENT, served to anyone. It carries the design and the renderer and NO TRAINING
+    // DATA -- the week only ever arrives through POST /s below. It used to be a contentless
+    // shell that `document.write`-replaced itself with a second, separately-served page, so that
+    // not even the stylesheet reached a stranger. That cannot work behind a CSP nonce: the
+    // written markup is judged against THIS response's policy, the second response's nonce
+    // matches nothing, and the page renders blank with no error. See src/app.html.
     if (request.method === "GET" && url.pathname === "/") {
       const n = nonce();
-      return html(BOOTSTRAP_HTML.replaceAll("__NONCE__", n), n);
+      return html(APP_HTML.replaceAll("__NONCE__", n), n);
     }
 
     if (url.pathname === "/s") {
@@ -119,10 +117,16 @@ export default {
         payload = null; // buildView renders "no plan published" honestly rather than blank.
       }
 
-      const view = buildView(payload, Date.now());
-      const n = nonce();
-      const body = APP_HTML.replaceAll("__NONCE__", n).replace("__VIEW__", embedJson(view));
-      return html(body, n);
+      // JSON, not a page. The document is already loaded and already has its nonce; this
+      // request exists only to carry the week across the authentication boundary.
+      return new Response(JSON.stringify(buildView(payload, Date.now())), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json; charset=utf-8",
+          "Cache-Control": "no-store",
+          "X-Content-Type-Options": "nosniff",
+        },
+      });
     }
 
     // Everything else, including HEAD and any probe for a data file, gets nothing.
