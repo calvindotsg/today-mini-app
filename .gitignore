@@ -1,0 +1,21 @@
+# Wrangler's local state, and the emulated KV it writes during `wrangler dev`.
+.wrangler/
+
+# The reduced payload the publisher produces. It is a copy of Calvin's training plan; the
+# repository is not where it lives.
+dist/
+
+# THE ONE FILE THAT MUST NEVER BE COMMITTED. `wrangler dev` reads Worker secrets from here, so
+# during local testing it holds a bot token. The real secrets live in Cloudflare, set with
+# `wrangler secret put` — see README.
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+
+# Belt and braces: nothing credential-shaped, wherever it ends up.
+*.env
+.env
+.env.*
+*.pem
+*.key
+node_modules/

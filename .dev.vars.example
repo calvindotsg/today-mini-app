@@ -1,0 +1,5 @@
+# Copy to `.dev.vars` for `wrangler dev`. NEVER commit the copy.
+# For local testing a FAKE token is correct — the suite mints its own initData with it, so no
+# real bot credential is needed to exercise every auth path.
+BOT_TOKEN="123456:AAH-test-token-not-a-real-one"
+ALLOWED_USER_ID="1000000001"

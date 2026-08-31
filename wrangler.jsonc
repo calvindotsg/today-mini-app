@@ -1,0 +1,31 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "today-calvin-sg",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-08-01",
+
+  // A ROUTE, NOT A CUSTOM DOMAIN, and the difference is load-bearing.
+  //
+  // `custom_domain: true` makes Cloudflare create and manage the DNS record for this hostname
+  // itself. The calvin.sg zone is managed as code by octoDNS in calvindotsg/portfolio-v2, whose
+  // weekly drift workflow FAILS ON PURPOSE when the live zone and the repo disagree -- so a
+  // record this Worker created behind octoDNS's back would break that gate every Monday.
+  //
+  // A route is not a DNS record and octoDNS cannot see it. The hostname resolves because of a
+  // proxied AAAA record added to dns/zones/calvin.sg.yaml by pull request, which stays the zone
+  // file's to own. Do not "simplify" this to a custom domain.
+  "routes": [{ "pattern": "today.calvin.sg/*", "zone_name": "calvin.sg" }],
+
+  // The HTML files are imported into the Worker as strings and templated per request.
+  "rules": [{ "type": "Text", "globs": ["**/*.html"], "fallthrough": true }],
+
+  "kv_namespaces": [
+    { "binding": "WEEK", "id": "c7d4eafc77364e65a8907678076fb2ea" }
+  ]
+
+  // No `vars`. BOT_TOKEN and ALLOWED_USER_ID are Worker SECRETS -- see README. Neither may ever
+  // appear in this file: it is committed, and one of them is the bot's whole identity.
+  //
+  // No `observability`. The only interesting request carries a launch credential in a header,
+  // and the cheapest way to never log it is to log nothing.
+}
