@@ -5,9 +5,18 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Today</title>
 <!--
-  THE ONE SCREEN. Served only after the Worker has validated initData and matched the user id --
-  nothing in this file is reachable without that, which is why the data is inlined rather than
-  fetched: there is no second request to authorise, and no data endpoint to attack.
+  THE ONE SCREEN, AND THE ONLY DOCUMENT. Served to anyone who asks; it carries the design and the
+  renderer and NO TRAINING DATA AT ALL. The week arrives from POST /s, which answers only a launch
+  Telegram signed for the one allowed account and returns 401 with an empty body to everyone else.
+
+  IT USED TO BE TWO DOCUMENTS -- a contentless shell that fetched the finished page and replaced
+  itself with `document.write` -- so that not even the stylesheet reached a stranger. That is
+  IMPOSSIBLE with a CSP nonce and it failed silently: `document.write` does not create a new
+  document, so the written markup is judged against the FIRST response's Content-Security-Policy,
+  the second response's nonce matches nothing, and every inline <style> and <script> is dropped.
+  The result is a blank white page with no error anywhere. Measured on the live site: the two
+  responses carried `nonce-kCVb0Cuex5ja4xAcrw7AGQ` and `nonce-iMrWZCXlO8c5cS5ja9WGPQ`.
+  Do not split this back into two documents.
 
   DESIGN: the calvin.sg design system, the same fifteen tokens the weekly artifact is drawn in.
     - NO RAW HEX outside the three palette blocks below.
@@ -132,7 +141,6 @@ footer{margin-top:1.5rem; color:var(--quieter); font-size:.6875rem}
 </head>
 <body>
 <main id="root" tabindex="-1"></main>
-<script type="application/json" id="view" nonce="__NONCE__">__VIEW__</script>
 <script nonce="__NONCE__">
 (function () {
   "use strict";
@@ -156,11 +164,22 @@ footer{margin-top:1.5rem; color:var(--quieter); font-size:.6875rem}
     } catch (e) { /* fail open */ }
   }
 
-  var view;
-  try { view = JSON.parse(document.getElementById("view").textContent); }
-  catch (e) { view = { ok: false, error: "This page could not read its own data." }; }
-
+  var view = null;
   var root = document.getElementById("root");
+
+  // Telegram puts the launch parameters in the URL FRAGMENT, which is never sent to a server --
+  // so nothing can be proven about the first GET, and this is the request that proves it. The
+  // query string is checked too because a direct link can deliver them there on some clients.
+  function launchParams() {
+    var sources = [location.hash.replace(/^#/, ""), location.search.replace(/^\?/, "")];
+    for (var i = 0; i < sources.length; i++) {
+      try {
+        var v = new URLSearchParams(sources[i]).get("tgWebAppData");
+        if (v) return v;
+      } catch (e) { /* fall through */ }
+    }
+    return "";
+  }
 
   function el(tag, cls, text) {
     var n = document.createElement(tag);
@@ -263,7 +282,8 @@ footer{margin-top:1.5rem; color:var(--quieter); font-size:.6875rem}
     return c;
   }
 
-  function render() {
+  function render(v) {
+    view = v;
     root.textContent = "";
 
     if (!view.ok) {
@@ -309,9 +329,33 @@ footer{margin-top:1.5rem; color:var(--quieter); font-size:.6875rem}
     add(root, f);
   }
 
-  render();
+  // Tell Telegram we are up before the network call, so the client stops showing its own
+  // placeholder while we wait.
   postEvent("web_app_ready");
   postEvent("web_app_expand");
+
+  // The three messages below are chosen from what the CLIENT already knows -- whether it had
+  // launch parameters, whether the server said no, whether the network answered at all. They tell
+  // a stranger nothing: the server's reply is one 401 with an empty body in every refusal.
+  var params = launchParams();
+  if (!params) {
+    render({ ok: false, error: "Open this from your chat with Mochi." });
+    return;
+  }
+  fetch("/s", {
+    method: "POST",
+    body: params,
+    headers: { "Content-Type": "text/plain;charset=UTF-8" },
+    cache: "no-store",
+    credentials: "omit",
+  }).then(function (r) {
+    if (!r.ok) { render({ ok: false, error: "This app is not available for your account." }); return null; }
+    return r.json();
+  }).then(function (v) {
+    if (v) render(v);
+  }).catch(function () {
+    render({ ok: false, error: "Could not reach the plan. Try again in a moment." });
+  });
 })();
 </script>
 </body>
