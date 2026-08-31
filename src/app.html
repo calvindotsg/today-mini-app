@@ -212,6 +212,14 @@ footer{margin-top:1.5rem; color:var(--quieter); font-size:.6875rem}
 /* Focus gets its own rule and is never listed with hover: hover is a pointer's affordance and
    some readers have no pointer. The ring goes on the label because the input is the 1px box. */
 .theme input:focus-visible + label{outline:2px solid var(--accent); outline-offset:2px}
+/* THE SWAP SNAPS, and this is the same rule as the press one above rather than a new idea.
+   The 300ms ramp is the chip's hover and press affordance; a THEME change moves every token
+   under it at once, so without this the ground flips instantly while the chips ease across for
+   a third of a second -- measured in the browser, the chips still resolving the OLD palette's
+   #111111 on the NEW palette's #fafafa ground. That is an acknowledgement of the press fading
+   in after the press, which is the one thing this design says a press must never do. Set for
+   exactly one forced reflow by the script below, so hover and press keep their ramp. */
+:root[data-swapping] .theme label{transition:none}
 /* A forced-colours mode replaces every author colour, so the inverted fill -- the only thing
    saying which option is current -- would arrive blank. The marks need nothing: they are inline
    SVG filled with currentColor, not a mask over a background the mode overrides. */
@@ -274,21 +282,28 @@ footer{margin-top:1.5rem; color:var(--quieter); font-size:.6875rem}
   // The control, and nothing about the week. It is wired separately from the app below because
   // it must keep working through every path that one takes -- including the two that render an
   // error and return.
-  var root = document.documentElement;
+  var docEl = document.documentElement;
   var inputs = document.querySelectorAll(".theme input[name=theme]");
 
   // SEEDED FROM WHAT IS ALREADY STAMPED, not from storage: the pre-paint script in <head> has
   // already run, so the attribute IS the resolved answer, and reading it here means there is one
   // place that decides what "current" means. Nothing is written until he chooses.
-  var t = root.getAttribute("data-theme");
+  var t = docEl.getAttribute("data-theme");
   var current = (t === "dark" || t === "light") ? t : "system";
 
   function choose(value) {
     // The un-stamped state is the ABSENCE of the attribute, which is why removing it is the
     // whole of "follow the system" -- there is no third palette and no matchMedia listener,
     // because block 2 is a media query and CSS re-resolves it on its own.
-    if (value === "system") root.removeAttribute("data-theme");
-    else root.setAttribute("data-theme", value);
+    // Suppress the chips' colour ramp across the swap, then restore it. The forced reflow
+    // between the two is what makes this work: it flushes style with transition:none still in
+    // effect and the new palette already applied, so no transition is ever started.
+    docEl.setAttribute("data-swapping", "");
+    if (value === "system") docEl.removeAttribute("data-theme");
+    else docEl.setAttribute("data-theme", value);
+    void docEl.offsetWidth;
+    docEl.removeAttribute("data-swapping");
+    syncChrome();
     try {
       localStorage.setItem("theme", value);
     } catch (e) { /* Storage throws outright in some contexts. A preference that cannot be
@@ -301,12 +316,34 @@ footer{margin-top:1.5rem; color:var(--quieter); font-size:.6875rem}
       if (this.checked) choose(this.value);
     });
   }
-})();
-</script>
-
-<script nonce="__NONCE__">
-(function () {
-  "use strict";
+  // ── the Telegram bridge, and the seam the control just made visible ─────────────────────
+  //
+  // Telegram paints its own header and the ground behind this page from ITS theme, which the
+  // reader sets independently of the OS. That was survivable while this page only ever followed
+  // prefers-color-scheme -- the two disagreed no more often than the OS and Telegram did. It is
+  // NOT survivable now: the control above lets him choose light while Telegram is dark, and the
+  // page then sits light under a dark header with dark ground below it.
+  //
+  // Telegram's own guidance is to "deliver a seamless experience by monitoring the dynamic
+  // theme-based colors provided by the API and using them accordingly". For a page that carries
+  // its own design system the compliant direction is OUTWARD: tell Telegram what this page is
+  // painted, rather than repainting this page in Telegram's colours -- which would put fifteen
+  // tokens' worth of decided design at the mercy of whatever custom theme he is running.
+  //
+  // The value is READ OUT OF THE TOKEN, never written here: --background is the one thing that
+  // already says what the resolved ground is in all three states, and a literal would be a hex
+  // outside the palette blocks and wrong in two states out of three.
+  function syncChrome() {
+    var bg = getComputedStyle(docEl).getPropertyValue("--background").trim();
+    // Only ever a plain #rrggbb -- the guard is here so a token that grows a color-mix() or
+    // resolves empty sends nothing rather than something Telegram will reject.
+    if (!/^#[0-9a-f]{6}$/i.test(bg)) return;
+    postEvent("web_app_set_background_color", { color: bg });
+    // `color` on the header needs Bot API 6.9; older clients ignore the event, which leaves the
+    // header where it already was. The alternative, color_key:"bg_color", is worse than nothing
+    // here -- it paints the header from TELEGRAM's palette, which is the disagreement itself.
+    postEvent("web_app_set_header_color", { color: bg });
+  }
 
   // Tell Telegram the app is up and ask for full height. telegram-web-app.js is deliberately NOT
   // loaded: it is an external request this page is not allowed to make, and the two events it
@@ -496,6 +533,9 @@ footer{margin-top:1.5rem; color:var(--quieter); font-size:.6875rem}
   // placeholder while we wait.
   postEvent("web_app_ready");
   postEvent("web_app_expand");
+  // After ready, deliberately: the client sets up its own chrome on that event, so colours sent
+  // before it are the ones it overwrites.
+  syncChrome();
 
   // The three messages below are chosen from what the CLIENT already knows -- whether it had
   // launch parameters, whether the server said no, whether the network answered at all. They tell
