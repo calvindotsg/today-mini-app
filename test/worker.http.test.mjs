@@ -54,7 +54,8 @@ before(async () => {
 after(() => { dev?.kill("SIGTERM"); });
 
 const post = (initData) => fetch(`${BASE}/s`, {
-  method: "POST", headers: { "X-Telegram-Init-Data": initData }, redirect: "manual",
+  method: "POST", body: initData,
+  headers: { "Content-Type": "text/plain;charset=UTF-8" }, redirect: "manual",
 });
 
 async function assertDenied(res, what) {
@@ -115,6 +116,14 @@ test("GET /s is refused -- the app is not reachable without a POSTed launch", as
   await assertDenied(await fetch(`${BASE}/s`), "GET /s");
 });
 
+test("a launch with surrounding whitespace still validates", async () => {
+  // A transport that appends a newline must not read as a forged launch.
+  const res = await post("\n" + mintInitData({ userId: ALLOWED_ID }) + "\n");
+  const body = await res.text();
+  assert.equal(res.status, 200);
+  assert.match(body, /<title>Today<\/title>/);
+});
+
 test("there is no data endpoint to find", async () => {
   for (const p of ["/payload.json", "/week", "/api/week", "/app.html", "/src/app.html", "/.dev.vars"]) {
     const res = await fetch(`${BASE}${p}`);
@@ -152,7 +161,8 @@ test("with ALLOWED_USER_ID unset, a VALID launch for Calvin is still refused", a
     await good.text();
 
     const res = await fetch(`http://127.0.0.1:${port}/s`, {
-      method: "POST", headers: { "X-Telegram-Init-Data": mintInitData({ userId: ALLOWED_ID }) },
+      method: "POST", body: mintInitData({ userId: ALLOWED_ID }),
+      headers: { "Content-Type": "text/plain;charset=UTF-8" },
     });
     await assertDenied(res, "unconfigured worker");
   } finally {

@@ -90,7 +90,16 @@ export default {
       if (request.method !== "POST") return deny();
       if (!configured) return deny();
 
-      const initData = request.headers.get("X-Telegram-Init-Data") ?? "";
+      // THE BODY, not a header. A header value is a constrained byte range, while `initData`
+      // carries a JSON `user` object with a display name that is arbitrary UTF-8 — an emoji in
+      // someone's first name is enough to make the header illegal and the request throw on the
+      // client, which surfaces as a blank refusal with nothing in any log. A body is UTF-8 by
+      // definition.
+      // `.trim()` because a transport that appends a newline is a transport bug, not an
+      // authentication decision. Found the honest way: a shell pipeline added one and turned a
+      // valid launch into `malformed-hash`, which is indistinguishable from an attack in the
+      // response and from nothing at all in the logs.
+      const initData = (await request.text()).trim().slice(0, 8192);
       const result = await validateInitData(initData, env.BOT_TOKEN, {
         nowMs: Date.now(),
         maxAgeSeconds: MAX_INITDATA_AGE_SECONDS,

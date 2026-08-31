@@ -66,12 +66,17 @@ export async function validateInitData(initData, botToken, opts = {}) {
   // saying so here keeps `timingSafeEqual` comparing two strings of the same shape.
   if (!/^[0-9a-f]{64}$/.test(hash)) return { ok: false, reason: "malformed-hash" };
 
+  // ONLY `hash` comes out. The docs are explicit: the data-check-string is "a chain of ALL
+  // received fields, sorted alphabetically".
+  //
+  // 🔴 An earlier version also skipped `signature`, and that broke every launch from a real
+  // client while passing the entire suite. `signature` IS excluded — but from the OTHER check:
+  // the Ed25519 third-party validation, which does not use the bot token at all. Applying one
+  // check's exclusion list to the other is silent and total: modern clients always send
+  // `signature`, so the app refused its own owner while every hand-minted fixture passed.
   const pairs = [];
   for (const [k, v] of params) {
     if (k === "hash") continue;
-    // `signature` is Telegram's newer Ed25519 field. It is excluded from the HMAC data-check
-    // string by the same rule the docs give for `hash`; including it fails every real launch.
-    if (k === "signature") continue;
     pairs.push(`${k}=${v}`);
   }
   pairs.sort();
