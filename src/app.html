@@ -277,7 +277,8 @@ footer{margin-top:1.5rem; color:var(--quieter); font-size:.6875rem}
     // week is fresh and useless; a plan for this week pushed four days ago is old and correct.
     if (!view.coversToday) {
       add(root, banner("Not this week", "The published plan runs " + view.weekStart + " to " + view.weekEnd +
-        ", so it says nothing about today (" + view.today + "). Nothing below is a plan for today."));
+        ", so it says nothing about today (" + view.today + "). There is nothing here for today, and " +
+        "anything shown would be a guess."));
     } else if (view.stale) {
       var age = view.ageHours === null ? null : Math.round(view.ageHours);
       add(root, banner("Possibly out of date", age === null
