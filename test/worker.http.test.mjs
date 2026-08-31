@@ -192,6 +192,39 @@ test("the theme control offers three states and can get back to the un-stamped o
     "a state the mark set has no mark for is drawn as a word, never an emoji");
 });
 
+// Telegram's own design guideline is that a Mini App "should deliver a seamless experience by
+// monitoring the dynamic theme-based colors provided by the API and using them accordingly".
+// This page carries its own design system, so it satisfies that OUTWARD -- it tells Telegram what
+// it is painted rather than repainting itself in Telegram's colours. Without this the reader can
+// now choose light while Telegram is dark and sit under a mismatched header.
+test("the page tells Telegram what it is painted, reading the value from the token", async () => {
+  const res = await fetch(`${BASE}/`);
+  const body = await res.text();
+
+  assert.match(body, /web_app_set_background_color/, "the ground must be sent to the client");
+  assert.match(body, /web_app_set_header_color/, "and so must the header, or the seam is half done");
+
+  // Read from --background, never written as a literal: it is the one thing that already says
+  // what the resolved ground is in all three states, and a hex here would be wrong in two of them.
+  assert.match(body, /getPropertyValue\("--background"\)/,
+    "the colour must be read out of the token");
+  const sync = body.match(/function syncChrome\(\)\s*\{([\s\S]*?)\n  \}/)?.[1] ?? "";
+  assert.ok(sync.length > 0, "syncChrome must exist");
+  assert.doesNotMatch(sync, /#[0-9a-fA-F]{6}/, "no literal hex may appear in the colour sync");
+});
+
+test("a theme swap snaps rather than ramping the chips across the old palette", async () => {
+  const res = await fetch(`${BASE}/`);
+  const body = await res.text();
+  // The chip's 300ms ramp is its hover and press affordance. A theme change moves every token at
+  // once, so without suppression the ground flips instantly while the chips ease -- an
+  // acknowledgement of the press arriving after the press.
+  assert.match(body, /:root\[data-swapping\] \.theme label\{transition:none\}/,
+    "the swap must suppress the chip ramp");
+  assert.match(body, /setAttribute\("data-swapping", ""\)[\s\S]*offsetWidth[\s\S]*removeAttribute\("data-swapping"\)/,
+    "and must force a reflow between setting and clearing it, or nothing is suppressed");
+});
+
 test("GET /s is refused -- the app is not reachable without a POSTed launch", async () => {
   await assertDenied(await fetch(`${BASE}/s`), "GET /s");
 });
