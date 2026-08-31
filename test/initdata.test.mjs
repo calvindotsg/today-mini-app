@@ -69,12 +69,37 @@ test("a valid signature with no user object is refused", async () => {
   assert.deepEqual(r, { ok: false, reason: "no-user" });
 });
 
-test("a `signature` field is excluded from the data-check string", async () => {
-  // Telegram's newer Ed25519 field rides along in initData. If it were folded into the HMAC
-  // input, every real launch from a modern client would fail -- so this asserts the exclusion,
-  // not merely that some string validates.
-  const r = await validateInitData(mintInitData({ extra: {} }) + "&signature=abc", FAKE_BOT_TOKEN);
+// 🔴 THE REGRESSION TEST. `signature` belongs IN the data-check-string: the docs say the string is
+// "a chain of all received fields", and only `hash` is compared rather than included. Excluding it
+// as well is the Ed25519 THIRD-PARTY check's rule, and applying that here refuses every launch a
+// real client makes while every minimal fixture still passes.
+test("`signature` is part of the data-check string, as a real client sends it", async () => {
+  const initData = mintInitData();
+  assert.match(initData, /(^|&)signature=/, "the fixture must carry what a real client carries");
+  const r = await validateInitData(initData, FAKE_BOT_TOKEN);
   assert.equal(r.ok, true);
+});
+
+// The negative control for it: a launch whose hash was computed with `signature` LEFT OUT is
+// exactly the shape the old bug produced, and it must be refused.
+test("a launch signed over a string that omitted `signature` is refused", async () => {
+  const r = await validateInitData(mintInitData({ dcsOmit: ["signature"] }), FAKE_BOT_TOKEN);
+  assert.deepEqual(r, { ok: false, reason: "bad-hash" });
+});
+
+// Older clients send no `signature` at all; those must keep working.
+test("a launch with no `signature` field still validates", async () => {
+  const initData = mintInitData({ omit: ["signature"] });
+  assert.doesNotMatch(initData, /(^|&)signature=/);
+  assert.equal((await validateInitData(initData, FAKE_BOT_TOKEN)).ok, true);
+});
+
+// Every other field a client may send must also be inside the string.
+test("chat_instance and chat_type are part of the data-check string", async () => {
+  assert.deepEqual(await validateInitData(mintInitData({ dcsOmit: ["chat_instance"] }), FAKE_BOT_TOKEN),
+    { ok: false, reason: "bad-hash" });
+  assert.deepEqual(await validateInitData(mintInitData({ dcsOmit: ["chat_type"] }), FAKE_BOT_TOKEN),
+    { ok: false, reason: "bad-hash" });
 });
 
 test("timingSafeEqual agrees with === on equality, including on length mismatch", () => {

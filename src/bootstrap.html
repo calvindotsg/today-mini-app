@@ -38,18 +38,26 @@
     }
     return "";
   }
-  function fail() { document.getElementById("m").hidden = false; }
+  function fail(msg) {
+    var m = document.getElementById("m");
+    if (msg) m.textContent = msg;
+    m.hidden = false;
+  }
 
-  // Always POST, even with nothing to send. The failure path is then IDENTICAL whether the
-  // launch parameters were absent, forged or expired -- one request, one 401, one line of text.
-  // Branching here would tell a stranger which of those they are.
+  // Always POST, even with nothing to send, so the SERVER's answer is identical whether the
+  // launch was absent, forged or expired -- one 401, one empty body. The three messages below
+  // are chosen client-side from things the client already knows, so they tell a stranger
+  // nothing: it knew whether it had launch parameters before it asked.
+  var params = launchParams();
+  if (!params) { fail("Open this from the chat."); return; }
   fetch("/s", {
     method: "POST",
-    headers: { "X-Telegram-Init-Data": launchParams() },
+    body: params,
+    headers: { "Content-Type": "text/plain;charset=UTF-8" },
     cache: "no-store",
     credentials: "omit",
   }).then(function (r) {
-    if (!r.ok) { fail(); return null; }
+    if (!r.ok) { fail("This app is not available for your account."); return null; }
     return r.text();
   }).then(function (html) {
     if (html === null) return;
@@ -58,7 +66,7 @@
     document.open();
     document.write(html);
     document.close();
-  }).catch(fail);
+  }).catch(function () { fail("Could not reach the app. Try again."); });
 })();
 </script>
 </body>
