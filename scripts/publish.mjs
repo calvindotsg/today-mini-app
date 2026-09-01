@@ -94,8 +94,8 @@ try {
   payload = reduceWeekState(extractWeekState(readFileSync(file, "utf8")), { generatedAt: sgtStamp() });
 } catch (e) {
   console.error(`REFUSED: ${e.message}`);
-  console.error("The week-state contract is owned by the Claude project that writes the artifact,");
-  console.error("not by this repository. If it has changed, fix src/reduce.js and CONTRACT.md --");
+  console.error("The week-state contract is owned by the skill that writes the artifact, not by");
+  console.error("this repository. If it has changed, fix src/reduce.js and CONTRACT.md --");
   console.error("do not loosen the check so a half-understood plan gets published.");
   process.exit(1);
 }
