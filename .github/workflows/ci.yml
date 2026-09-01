@@ -1,0 +1,168 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Nothing in the test half writes to the repository, and the repository default for GITHUB_TOKEN
+# is `read` (setup-repo.sh pins it there). Declaring it anyway is what stops a future edit from
+# silently inheriting more.
+permissions:
+  contents: read
+
+env:
+  # THE PIN LIVES HERE, ONCE. package.json's `dev` and `deploy` scripts hold their own copies and
+  # scripts/publish.mjs a third; this is the fourth place it would otherwise be written by hand.
+  # Bumping it is a decision, not a chore: the workerd the pinned wrangler bundles must support
+  # wrangler.jsonc's `compatibility_date`, and a version that does not fails as `wrangler dev`
+  # never coming up -- which reads like a hang, not a version error.
+  WRANGLER_VERSION: "4.127.1"
+
+jobs:
+  # The matrix runs under its OWN name, and `test` below fans it in. This is not stylistic: the
+  # `main` branch protection requires a status check whose context is exactly `test`, and a matrix
+  # publishes one check run per leg (`test (22)`, `test (24)`, ...). Nothing would ever report the
+  # bare `test` context and every PR would sit on "Expected - waiting for status".
+  #
+  # Do NOT collapse this by giving the matrix `name: test` instead: three check runs sharing one
+  # context resolve to the most recent report, so a failing leg can be masked by a later-finishing
+  # passing one.
+  test-matrix:
+    name: node ${{ matrix.node-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [22, 24, 26]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: ${{ matrix.node-version }}
+          # No `cache:` and no install step. This repository declares ZERO dependencies and has no
+          # lockfile -- `npm ci` would fail and a cache key would hash nothing. The only thing the
+          # suite fetches is wrangler, through `npx` at run time.
+
+      # 🔴 LOAD-BEARING, AND IT DOES NOT LOOK IT.
+      # `wrangler dev` reads Worker secrets from `.dev.vars`, which is gitignored and therefore
+      # absent in every fresh checkout. Without this line test/worker.http.test.mjs fails on the
+      # happy path with `401 !== 200` -- which reads exactly like an access-control regression and
+      # sends you hunting through src/initdata.js instead of at the missing file.
+      # The example holds a FAKE token; the suite mints its own initData against it, so no real
+      # bot credential is needed to exercise every auth path.
+      - name: Provide the fake local secrets the suite signs against
+        run: cp .dev.vars.example .dev.vars
+
+      - run: npm test
+
+  # The required status check for `main`. Keep this job id exactly `test`.
+  test:
+    needs: [test-matrix]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify every matrix leg passed
+        run: |
+          echo "test-matrix result: ${{ needs.test-matrix.result }}"
+          [ "${{ needs.test-matrix.result }}" = "success" ]
+
+  # ---------------------------------------------------------------------------------------------
+  # DEPLOY
+  #
+  # This lives in the same workflow as `test` on purpose. A separate push-triggered deploy.yml
+  # would run IN PARALLEL with the tests on the squash commit, so "deploy once the tests pass"
+  # would not be true of the commit that actually ships. Only `needs:` expresses that.
+  # ---------------------------------------------------------------------------------------------
+  deploy:
+    name: deploy production
+    needs: [test]
+    # AN ALLOW-LIST OF EVENTS, AND A REF TEST. Both halves are load-bearing.
+    #
+    # The allow-list is deliberate: the obvious spelling, `!= 'pull_request'`, is a DENY-list, so
+    # every trigger added to `on:` in future would deploy production BY DEFAULT. That is not
+    # hypothetical -- `pull_request_target` and `issue_comment` both carry `github.ref` =
+    # `refs/heads/main`, so they satisfy the ref test too, and `pull_request_target` is the one
+    # that runs PR-authored refs with secrets available.
+    #
+    # The ref test is what stops a `workflow_dispatch` on a feature branch from shipping to
+    # today.calvin.sg.
+    if: >-
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+      && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    # The `production` environment holds CLOUDFLARE_API_TOKEN behind a deployment branch policy
+    # limited to `main`. That is a STRUCTURAL control and it fails differently from the `if:`
+    # above: a job on another ref cannot read the secret at all, where the guard is a convention a
+    # refactor can drop. Both are here for that reason.
+    #
+    # ⚠️ THE INVARIANT: CLOUDFLARE_API_TOKEN must exist ONLY as an environment secret. A
+    # repository-level secret of the same name is inherited by any job that omits `environment:`,
+    # and the branch policy is then void with nothing reporting it.
+    environment:
+      name: production
+      url: https://today.calvin.sg
+    concurrency:
+      group: today-production
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+
+      - name: wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          # A repository VARIABLE, not a secret. It is a 32-hex value printed in every dashboard
+          # URL and in wrangler's own error output, so masking it would redact that substring from
+          # unrelated log lines. It is also FUNCTIONALLY REQUIRED rather than a convenience:
+          # wrangler.jsonc carries no `account_id`, so without this `getActiveAccountId` falls back
+          # to `GET /accounts` -- a call this narrowly-scoped token cannot make -- producing an
+          # auth error that looks like a bad token and invites widening the scopes.
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+        # 🔴 `npx --yes --ignore-scripts`, NOT cloudflare/wrangler-action.
+        #
+        # calvindotsg/portfolio-v2 has a written, tested decision against the action for exactly
+        # this job (plans/done/029-ship-the-artifact-you-gated.md; guarded by
+        # tests/workflow-guards.test.ts): it resolves and installs its own npm tree with lifecycle
+        # scripts ENABLED, inside the job holding CLOUDFLARE_API_TOKEN. SHA-pinning the action ref
+        # pins the action, not that tree. Its own comment concludes wrangler-action "has the same
+        # shape".
+        #
+        # WHAT THE VERSION PIN BUYS, STATED HONESTLY: it pins wrangler and NOT its dependency tree.
+        # `npx` consults no lockfile, and nothing in this repository holds an integrity expectation
+        # for a single package it resolves. `--ignore-scripts` closes the EXECUTING half of that --
+        # a substituted package can still be resolved, it just cannot run at install time.
+        #
+        # ⚠️ `--ignore-scripts` MUST precede the specifier. npm passes everything after the package
+        # name to the package itself, so `npx --yes wrangler@x --ignore-scripts deploy` hands the
+        # flag to wrangler, which ignores it, and install scripts run.
+        run: npx --yes --ignore-scripts "wrangler@${WRANGLER_VERSION}" deploy
+
+      # Merging is not shipping, and a green deploy step is not proof either -- it reports that the
+      # upload succeeded, not that the edge is serving it. The Worker templates src/app.html with a
+      # per-request CSP nonce, so normalise that and the live page and the file on disk are
+      # byte-identical. Equal digests prove the deploy shipped exactly what the matrix tested.
+      - name: Prove the edge is serving this commit
+        run: |
+          want=$(sed 's/__NONCE__/N/g' src/app.html | shasum -a 256 | cut -d' ' -f1)
+          for attempt in 1 2 3 4 5; do
+            got=$(curl -sS --fail --max-time 20 https://today.calvin.sg/ \
+                  | sed 's/nonce="[^"]*"/nonce="N"/g' | shasum -a 256 | cut -d' ' -f1) || got=""
+            [ "$got" = "$want" ] && { echo "shipped: ${want}"; exit 0; }
+            echo "attempt ${attempt}: live=${got:-<unreachable>} want=${want}"
+            sleep 10
+          done
+          echo "::error::The edge is not serving this commit. Deploy reported success; propagation or the route did not."
+          exit 1

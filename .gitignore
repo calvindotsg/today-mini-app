@@ -19,3 +19,32 @@ dist/
 *.pem
 *.key
 node_modules/
+
+# --- Claude Code ---
+# `.claude/` itself IS committed — settings, agents and skills are shared project config. Two
+# exceptions, and neither is inherited: GitHub's default community health files cover CONTRIBUTING,
+# SECURITY, issue and PR templates and a few others, and `.gitignore` is not on that list. So
+# calvindotsg/.github documents these entries and every repository still needs its own copy.
+#   - worktrees/ holds full nested checkouts created by EnterWorktree, which would otherwise show
+#     up as a large untracked directory
+#   - *.local.json is per-developer override, gitignored by Claude Code's own convention
+.claude/worktrees/
+.claude/*.local.json
+CLAUDE.local.md
+
+# --- Scratch working files ---
+# Handover notes and copy-paste instructions for steps that need a human — the Cloudflare API
+# token among them. Never committed.
+.scratchpad/
+
+# --- macOS ---
+# .DS_Store is the one that genuinely turns up; the rest is resource-fork debris from a file
+# round-tripping through a non-HFS volume or an archive.
+.DS_Store
+._*
+
+# --- Editors ---
+.idea/
+.vscode/
+*~
+*.swp
