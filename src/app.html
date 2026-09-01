@@ -346,12 +346,42 @@ footer{margin-top:1.5rem; color:var(--quieter); font-size:.6875rem}
 .bed .mc{color:var(--quieter); margin-right:.4em}
 .bed .plan{font-variant-numeric:tabular-nums; color:var(--text)}
 
-/* A day already spent, collapsed to one line. There is no expander: the mark set ships no chevron,
-   an expander would need a 2.75rem target on every one of them, and what a finished day actually
-   settled is what the weekly artifact is for. */
+/* A day already spent, collapsed to one line that OPENS. The summary carries the whole target --
+   full width and floored at 2.75rem, so it is a row a thumb finds rather than a word to hit. */
 .day--past{padding-bottom:0}
 .pastline{margin:0 0 1rem 0; color:var(--quieter); font-size:.8125rem}
 .pastline .d{font-weight:600}
+
+.day--past summary{
+  list-style:none; cursor:pointer;
+  display:flex; align-items:center; gap:.45rem;
+  min-height:2.75rem; padding:.25rem 0;
+  color:var(--quieter); font-size:.8125rem;
+}
+/* Safari draws its own triangle from a pseudo-element the standard property does not reach. */
+.day--past summary::-webkit-details-marker{display:none}
+.day--past summary .d{font-weight:600}
+/* THE ROTATION SNAPS, and is not a transition. It is not decoration -- it is the only thing
+   distinguishing an open day from a closed one at a glance, and this design system's rule is that
+   information must never be carried in motion alone: a still frame has to say what the moving one
+   said. Measured in the browser, the eased version was worse than merely redundant, resolving to
+   an identity matrix and leaving the arrow pointing right on an OPEN day. An explicit rotate(0)
+   base is what gives the open state something definite to be, rather than interpolating from
+   `none`. */
+.disc{width:.9em; height:.9em; flex:none; transform:rotate(0deg)}
+details[open] > summary .disc{transform:rotate(90deg)}
+/* Guarded, for the same reason the chips are: a touch browser leaves :hover on the last thing
+   tapped, which would mark a closed day as the open one. */
+@media (hover: hover){
+  .day--past summary:hover{color:var(--accent)}
+}
+.day--past summary:active{color:var(--accent)}
+.day--past summary:focus-visible{outline:2px solid var(--accent); outline-offset:2px; border-radius:2px}
+.day--past details[open]{padding-bottom:1rem}
+.day--past details .slots{margin-top:.25rem}
+/* The rotation is the only thing saying open from closed for a reader who cannot see the layout
+   shift, so under reduced motion it must still ARRIVE -- just without travelling. The global
+   reduce block already collapses the duration; this is here to say that is deliberate. */
 
 @media (prefers-reduced-motion: reduce){
   *,*::before,*::after{animation-duration:.01ms !important; animation-iteration-count:1 !important;
@@ -549,13 +579,32 @@ footer{margin-top:1.5rem; color:var(--quieter); font-size:.6875rem}
     if (type === "back_button_pressed" && onBackPressed) onBackPressed();
   }
 
-  // The native clients call a function on us BY NAME, so it has to exist before the first press.
+  // ALL THREE GLOBALS, AND NEVER CONDITIONALLY. Telegram delivers an event by CALLING a function
+  // on us by name, and the name depends on the client: `Telegram.WebView.receiveEvent` on iOS and
+  // Android, `TelegramGameProxy.receiveEvent` on Desktop, `TelegramGameProxy_receiveEvent` on
+  // Windows Phone. telegram-web-app.js installs all three, and anything standing in for it must too.
+  //
+  // MEASURED ON AN IPHONE, and it is why this comment is long. The first version installed only the
+  // iOS/Android name and guarded it with `if (!alreadyThere)`. The back arrow APPEARED -- so the
+  // outbound half was correct -- and pressing it did nothing at all, because the client had already
+  // placed its own object at that path and the guard then skipped the assignment entirely. A guard
+  // written to avoid clobbering someone else's handler instead silently dropped our own.
+  //
+  // So: install unconditionally, and CHAIN whatever was there rather than deferring to it.
+  function installReceiver(obj, key) {
+    var prev = obj[key];
+    obj[key] = function (type, data) {
+      try { if (typeof prev === "function") prev.call(obj, type, data); } catch (e) { /* theirs, not ours */ }
+      handleTelegramEvent(type, data);
+    };
+  }
   try {
     window.Telegram = window.Telegram || {};
     window.Telegram.WebView = window.Telegram.WebView || {};
-    if (!window.Telegram.WebView.receiveEvent) {
-      window.Telegram.WebView.receiveEvent = function (type) { handleTelegramEvent(type); };
-    }
+    installReceiver(window.Telegram.WebView, "receiveEvent");
+    window.TelegramGameProxy = window.TelegramGameProxy || {};
+    installReceiver(window.TelegramGameProxy, "receiveEvent");
+    installReceiver(window, "TelegramGameProxy_receiveEvent");
   } catch (e) { /* fail open, as every cosmetic path here does */ }
 
   // The web client posts into the frame instead.
@@ -779,6 +828,28 @@ footer{margin-top:1.5rem; color:var(--quieter); font-size:.6875rem}
     return frag;
   }
 
+  // THE DISCLOSURE MARK, and it is not a new icon. The calvin.sg mark set is closed and ships no
+  // chevron, so a spent day opens on the set's OWN right arrow, turned 90 degrees by CSS when the
+  // day is open. Same mark, oriented -- rather than an emoji or a second icon family, both of which
+  // the design system refuses outright.
+  var ARROW_RIGHT = "m16.172 11l-5.364-5.364l1.414-1.414L20 12l-7.778 7.778l-1.414-1.414L16.172 13H4v-2z";
+
+  function discMark() {
+    var NS = "http://www.w3.org/2000/svg";
+    var svg = document.createElementNS(NS, "svg");
+    svg.setAttribute("class", "disc");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    // The summary's own text says which day it is; the arrow only says "this opens", which the
+    // element already tells the accessibility tree.
+    svg.setAttribute("aria-hidden", "true");
+    svg.setAttribute("focusable", "false");
+    var path = document.createElementNS(NS, "path");
+    path.setAttribute("fill", "currentColor");
+    path.setAttribute("d", ARROW_RIGHT);
+    svg.appendChild(path);
+    return svg;
+  }
+
   function renderGauge(v) {
     var g = el("div", "gauge");
     var scale = el("p", "scale");
@@ -829,10 +900,17 @@ footer{margin-top:1.5rem; color:var(--quieter); font-size:.6875rem}
     return g;
   }
 
-  function renderSlot(s) {
+  /**
+   * @param s        a session from the week
+   * @param reveal   show a CLOSED session's detail too. False on the days ahead, where a skipped
+   *                 session's rule and figures are noise; true inside an opened past day, where
+   *                 the reader has explicitly asked what happened.
+   */
+  function renderSlot(s, reveal) {
     // `statusWord` is null for a planned session and a word for every other state. It decides both
     // the dim treatment and what is printed, so the two can never disagree.
-    var li = el("li", "slot" + (s.statusWord ? " slot--closed" : ""));
+    var closed = Boolean(s.statusWord);
+    var li = el("li", "slot" + (closed ? " slot--closed" : ""));
 
     var t = hhmm(s.at);
     var col = el("span", t ? "t" : "t t--none", t || "—");
@@ -857,13 +935,18 @@ footer{margin-top:1.5rem; color:var(--quieter); font-size:.6875rem}
     if (s.statusWord) add(what, el("span", "status", s.statusWord));
     add(body, what);
 
-    // A CLOSED SESSION STOPS HERE. Everything below is what to do about a session, and a session
-    // already done or deliberately skipped is not one there is anything to do about -- "leave by
-    // 04:55" under it is a number that has passed, which is the one thing this app's largest
-    // element exists never to be.
-    if (!s.statusWord) {
-      var leave = hhmm(s.leaveBy);
-      if (leave) add(body, el("p", "leave", "Leave by " + leave));
+    // A CLOSED SESSION STOPS HERE ON THE DAYS AHEAD. Everything below is what to DO about a
+    // session, and one already done or deliberately skipped is not one there is anything to do
+    // about. Inside an opened past day it is shown anyway: there the question is not "what do I do"
+    // but "what was this", and that is the question the reader just tapped to ask.
+    if (!closed || reveal) {
+      // `leaveBy` is the exception and stays hidden on a closed session even when revealed --
+      // "leave by 04:55" under something that already happened is a number that has passed, which
+      // is the one thing this app's largest element exists never to be.
+      if (!closed) {
+        var leave = hhmm(s.leaveBy);
+        if (leave) add(body, el("p", "leave", "Leave by " + leave));
+      }
       if (s.place) add(body, el("p", "where", s.place));
       if (s.travel) add(body, el("p", "where", s.travel));
 
@@ -911,11 +994,11 @@ footer{margin-top:1.5rem; color:var(--quieter); font-size:.6875rem}
     var sec = el("section", cls);
     if (d.phase === "today") sec.setAttribute("aria-current", "date");
 
-    // A day already spent, collapsed to one line -- no expander, because the mark set ships no
-    // chevron and what a finished day settled is what the weekly artifact is for.
+    // A day already spent, collapsed to one line THAT OPENS. The summary is what a spent day
+    // usually needs; the detail is there for the day you want to check. `<details>` rather than a
+    // scripted toggle, so the disclosure, the keyboard handling and the semantics are the
+    // platform's -- which is also what makes it work with no JS state to keep in step.
     if (d.phase === "past") {
-      var p = el("p", "pastline");
-      add(p, el("span", "d", dayLabel(d)));
       var bits = [];
       if (d.tag) bits.push(d.tag);
       var c = d.counts || { total: 0 };
@@ -929,8 +1012,34 @@ footer{margin-top:1.5rem; color:var(--quieter); font-size:.6875rem}
         if (c.skipped) bits.push(c.skipped + " skipped");
         if (c.other) bits.push(c.other + " unrecorded");
       }
-      p.appendChild(document.createTextNode(" · " + bits.join(" · ")));
-      add(sec, p);
+      var line = " · " + bits.join(" · ");
+
+      // A day with nothing under it is NOT a disclosure. A control that opens onto emptiness lies
+      // about having something behind it, and a rest day is the commonest day of the week.
+      if (d.sessions.length === 0 && !d.bed) {
+        var p = el("p", "pastline");
+        add(p, el("span", "d", dayLabel(d)));
+        p.appendChild(document.createTextNode(line));
+        add(sec, p);
+        return sec;
+      }
+
+      var det = el("details");
+      var sum = el("summary");
+      sum.appendChild(discMark());
+      add(sum, el("span", "d", dayLabel(d)));
+      sum.appendChild(document.createTextNode(line));
+      add(det, sum);
+
+      if (d.sessions.length) {
+        var pul = el("ul", "slots");
+        // `true` -- inside an opened past day a closed session shows what it WAS, because that is
+        // the question the reader just tapped to ask.
+        for (var k = 0; k < d.sessions.length; k++) add(pul, renderSlot(d.sessions[k], true));
+        add(det, pul);
+      }
+      if (d.bed) add(det, renderBed(d.bed));
+      add(sec, det);
       return sec;
     }
 
@@ -957,6 +1066,16 @@ footer{margin-top:1.5rem; color:var(--quieter); font-size:.6875rem}
     if (view.weekLabel) add(h, el("span", "week mc", view.weekLabel));
     add(root, h);
 
+    // THE WAY BACK, ALWAYS DRAWN AND AT THE TOP. This was version-gated -- shown only where
+    // Telegram could not draw its own arrow -- on the reasoning that two controls for one action
+    // is furniture. Measured on a phone, that reasoning cost the whole feature: the arrow rendered
+    // and did nothing, and there was no other way off this screen. A way back is not furniture, and
+    // it does not get to depend on a bridge. Telegram's arrow is still set up and still works; this
+    // is simply not conditional on it.
+    var back = el("div", "nav nav--back");
+    add(back, navChip("Today", function () { show("today"); }));
+    add(root, back);
+
     // The control that opened this screen says "The week" and so does its heading. Two strings
     // that have to agree are one string.
     add(root, el("h1", "weekhead", "The week"));
@@ -969,13 +1088,11 @@ footer{margin-top:1.5rem; color:var(--quieter); font-size:.6875rem}
     add(root, renderGauge(w.volume || {}));
     for (var i = 0; i < w.days.length; i++) add(root, renderDay(w.days[i]));
 
-    // ONLY WHERE TELEGRAM'S OWN ARROW CANNOT APPEAR. On a current client this would be a second
-    // control for an action the header already offers, and furniture recedes.
-    if (!backSupported) {
-      var nav = el("div", "nav");
-      add(nav, navChip("Today", function () { show("today"); }));
-      add(root, nav);
-    }
+    // And again at the foot, because the week is long and scrolling back to the top to leave is a
+    // tax on the reader who read all of it.
+    var foot = el("div", "nav");
+    add(foot, navChip("Today", function () { show("today"); }));
+    add(root, foot);
   }
 
   // ── the two screens ───────────────────────────────────────────────────────────────────────
