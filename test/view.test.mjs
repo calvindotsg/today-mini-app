@@ -226,3 +226,164 @@ test("reduce drops absent and empty fields rather than emitting them as empty", 
   assert.equal("prevKm" in out.meta, false, "meta is an allowlist too");
   assert.equal(out.meta.plannedKm, 40.41);
 });
+
+// ── the week screen ─────────────────────────────────────────────────────────────────────────
+//
+// The controls below exist because the week screen fails DIFFERENTLY from the Now slot. Now has
+// one job and shows nothing when it cannot do it; the week always draws seven rows, so its
+// failures are quiet ones -- a bar at zero where no ceiling was published, a day filed under the
+// wrong heading for the eight hours after Singapore's midnight, a field published by accident.
+
+const WEEK_META = { plannedKm: 44.23, ceilingKm: 48.57, priorWeekKm: 40.471, kiprunDate: "2026-09-27" };
+
+test("the week carries every day, classified against the request's own clock", () => {
+  const p = payload([
+    day("2026-08-24", "Monday", [sess({ status: "done" }), sess({ status: "done" })]),
+    day("2026-08-25", "Tuesday", [sess({ at: "2026-08-25T19:00" })]),
+    day("2026-08-26", "Wednesday", []),
+  ], WEEK_META);
+  const w = buildView(p, SGT("2026-08-25T09:00")).week;
+
+  assert.deepEqual(w.days.map((d) => d.phase), ["past", "today", "ahead"]);
+  assert.equal(w.days[0].counts.done, 2);
+  assert.equal(w.days[2].sessions.length, 0, "a day with nothing on it is still a day");
+  assert.equal(w.daysToKiprun, 33);
+});
+
+// A SPENT DAY IS SUMMARISED BY EVERYTHING THAT HAPPENED ON IT. The first version counted only
+// `done`, so a day of one done and two missed collapsed to "1 done" -- which reads as a light day
+// when it was the opposite. This is the control that would have caught that, and a count that
+// simply returned `sessions.length` passes the all-done case above while failing here.
+test("a spent day counts every outcome, not just the ones that went well", () => {
+  const p = payload([day("2026-08-24", "Monday", [
+    sess({ status: "done" }),
+    sess({ status: "missed" }),
+    sess({ status: "missed" }),
+    sess({ status: "skipped_by_design" }),
+    sess({ status: "planned" }),
+  ])], WEEK_META);
+  const c = buildView(p, SGT("2026-08-26T09:00")).week.days[0].counts;
+
+  assert.deepEqual(c, { total: 5, done: 1, missed: 2, skipped: 1, other: 1 });
+  assert.notEqual(c.done, c.total, "a count that returned sessions.length would pass an all-done day");
+});
+
+test("an empty spent day is nothing planned, not zero done", () => {
+  const p = payload([day("2026-08-24", "Monday", [])], WEEK_META);
+  const c = buildView(p, SGT("2026-08-26T09:00")).week.days[0].counts;
+  assert.equal(c.total, 0, "the renderer needs to tell a rest day from a day nobody completed");
+  assert.equal(c.done, 0);
+});
+
+// 🔴 THE ONE PIECE OF ARITHMETIC IN THIS FILE THAT A UTC DATE GETS WRONG. Between midnight and
+// 08:00 in Singapore it is still the previous day in UTC, so a classification built on
+// `new Date(nowMs).getDate()` files today under "past" and shifts the whole week up one row --
+// every morning, for eight hours, which is exactly when this app is read.
+test("the past/today/ahead boundary is Singapore's midnight, not UTC's", () => {
+  const p = payload([
+    day("2026-08-24", "Monday", [sess({ status: "done" })]),
+    day("2026-08-25", "Tuesday", [sess({ at: "2026-08-25T19:00" })]),
+  ], WEEK_META);
+
+  const justAfterMidnight = buildView(p, SGT("2026-08-25T00:05")).week;
+  assert.deepEqual(justAfterMidnight.days.map((d) => d.phase), ["past", "today"]);
+
+  const justBefore = buildView(p, SGT("2026-08-24T23:55")).week;
+  assert.deepEqual(justBefore.days.map((d) => d.phase), ["today", "ahead"]);
+});
+
+// Four states share ONE dim treatment on screen, so the word is the only thing that separates
+// them -- and the only carrier that survives a forced-colours mode. The mapping lives in view.js
+// precisely so this test can exist: nothing in this suite renders the DOM, so a mapping kept in
+// app.html could go missing with every test still green.
+test("every status prints its own word, and a planned session prints none", () => {
+  const p = payload([day("2026-08-25", "Tuesday", [
+    sess({ status: "planned" }),
+    sess({ status: "done" }),
+    sess({ status: "missed" }),
+    sess({ status: "skipped_by_design" }),
+    sess({ status: "postponed_upstream" }),
+  ])], WEEK_META);
+  const words = buildView(p, SGT("2026-08-25T09:00")).week.days[0].sessions.map((s) => s.statusWord);
+
+  assert.deepEqual(words, [null, "done", "missed", "skipped", "postponed upstream"]);
+  assert.equal(new Set(words.slice(1)).size, 4, "no two states may share a word");
+  assert.equal(words[4].includes("_"), false,
+    "an unknown status still has to read as English -- `postponed_upstream` on screen is a name " +
+    "that only makes sense once you know how the data is stored");
+});
+
+test("a week with no ceiling draws no bar at all, rather than a bar at zero", () => {
+  const noCeiling = buildView(payload([day("2026-08-25", "Tuesday", [sess({})])], { plannedKm: 44.23 }), SGT("2026-08-25T09:00"));
+  assert.equal(noCeiling.week.volume.plannedKm, 44.23);
+  assert.equal(noCeiling.week.volume.fraction, null, "an unmeasured ceiling is an ABSENCE, never 0");
+  assert.equal(noCeiling.week.volume.stepPct, null);
+
+  const zeroCeiling = buildView(payload([day("2026-08-25", "Tuesday", [sess({})])], { plannedKm: 44.23, ceilingKm: 0 }), SGT("2026-08-25T09:00"));
+  assert.equal(zeroCeiling.week.volume.fraction, null, "a zero ceiling must not divide");
+
+  const full = buildView(payload([day("2026-08-25", "Tuesday", [sess({})])], WEEK_META), SGT("2026-08-25T09:00"));
+  assert.equal(Math.round(full.week.volume.fraction * 1000) / 1000, 0.911);
+  assert.equal(Math.round(full.week.volume.stepPct * 10) / 10, 9.3);
+});
+
+test("a day with no tag and no bed renders as a day, not as an empty slot", () => {
+  const w = buildView(payload([day("2026-08-25", "Tuesday", [sess({})])], WEEK_META), SGT("2026-08-25T09:00")).week;
+  assert.equal(w.days[0].tag, null);
+  assert.equal(w.days[0].bed, null);
+  assert.equal(w.daysToKiprun !== null, true);
+
+  const noRace = buildView(payload([day("2026-08-25", "Tuesday", [sess({})])], {}), SGT("2026-08-25T09:00")).week;
+  assert.equal(noRace.daysToKiprun, null, "no race date published means no countdown, not NaN");
+});
+
+// 🔴 THE ALLOWLIST REACHES ONE LEVEL DOWN, and it has to: `pick` does not recurse, so naming
+// "bed" alone would copy every key the artifact ever adds to it. This is the direct analogue of
+// the session-level check above, for the two structures this change introduced.
+test("the day-level allowlist reaches inside bed, and drops what it does not name", () => {
+  const out = reduceWeekState({
+    meta: { weekLabel: "x", weekStart: "2026-08-24", weekEnd: "2026-08-30" },
+    days: [{
+      date: "2026-08-24", dow: "Monday", tag: "Long run", key: "mon", state: "past",
+      bed: { plan: "22:15", kind: "Floor", text: "→ 6h00.", debtMinutes: 57, source: "garmin" },
+      sessions: [{ kind: "k", title: "t", status: "planned", sport: "run", note: "<b>corrected</b>" }],
+    }],
+  }, { generatedAt: GEN });
+
+  const d = out.days[0];
+  assert.equal(d.tag, "Long run");
+  assert.equal("key" in d, false, "a day field outside the allowlist must not be published");
+  assert.equal("state" in d, false);
+  assert.deepEqual(Object.keys(d.bed).sort(), ["kind", "plan", "text"]);
+  assert.equal("debtMinutes" in d.bed, false, "the allowlist must reach INSIDE bed, not just name it");
+  assert.equal("source" in d.bed, false);
+  assert.equal(d.sessions[0].sport, "run");
+  assert.equal("note" in d.sessions[0], false, "note carries raw markup and corrections; it is not published");
+});
+
+test("an empty bed is dropped rather than published as an empty object", () => {
+  const out = reduceWeekState({
+    meta: { weekLabel: "x", weekStart: "2026-08-24", weekEnd: "2026-08-30" },
+    days: [
+      { date: "2026-08-24", dow: "Monday", bed: { unknown: "x" }, sessions: [] },
+      { date: "2026-08-25", dow: "Tuesday", bed: "22:15", sessions: [] },
+    ],
+  }, { generatedAt: GEN });
+  assert.equal("bed" in out.days[0], false, "a bed with nothing allowlisted in it is an absent bed");
+  assert.equal("bed" in out.days[1], false, "a bed that is not an object is not a bed");
+});
+
+// The mark set is closed, so an unknown sport is a MISSING ICON and not a broken week. Refusing
+// the publish over it would take the whole plan off the screen to avoid omitting one glyph.
+test("an unrecognised sport is dropped, and the session still publishes", () => {
+  const out = reduceWeekState({
+    meta: { weekLabel: "x", weekStart: "2026-08-24", weekEnd: "2026-08-30" },
+    days: [{ date: "2026-08-24", dow: "Monday", sessions: [
+      { kind: "k", title: "Swim", status: "planned", sport: "swim" },
+      { kind: "k", title: "Ride", status: "planned", sport: "ride" },
+    ] }],
+  }, { generatedAt: GEN });
+  assert.equal("sport" in out.days[0].sessions[0], false);
+  assert.equal(out.days[0].sessions[0].title, "Swim", "the session survives losing its mark");
+  assert.equal(out.days[0].sessions[1].sport, "ride");
+});

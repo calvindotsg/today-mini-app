@@ -10,7 +10,7 @@ cost a session.
 
 | Task | Command |
 |---|---|
-| Test | `npm test` (47 tests) |
+| Test | `npm test` (61 tests) |
 | Auth suite only | `npm run test:auth` |
 | Dev server | `npm run dev` |
 | Deploy | `npm run deploy` — CI also does this on merge to `main` |
@@ -29,10 +29,17 @@ a Claude session ──► scripts/publish.mjs ──► Cloudflare KV ──►
 |---|---|
 | `src/worker.js` | Routes, auth wiring, security headers. The whole server. |
 | `src/initdata.js` | Telegram signature validation. Deliberately small so it can be re-read against the docs in a minute — do not spread it across helpers. |
-| `src/reduce.js` | `week-state` → the published payload. Two **allowlists**, so a new upstream field cannot start being published by accident. |
-| `src/view.js` | payload + a clock → what the one screen shows. Pure, no DOM. |
-| `src/app.html` | The one screen, in the calvin.sg design system. Templated per request with a CSP nonce. |
+| `src/reduce.js` | `week-state` → the published payload. Four **allowlists**, so a new upstream field cannot start being published by accident. `BED_FIELDS` is one level down, because `pick` does not recurse. |
+| `src/view.js` | payload + a clock → what the two screens show. Pure, no DOM. |
+| `src/app.html` | Both screens, in the calvin.sg design system. Templated per request with a CSP nonce. |
+| `scripts/publish.mjs` | The publisher, and **two content gates**: a refusal on raw markup in any published field, and a warning on anything that reads like a revision of an earlier plan. |
 | `CONTRACT.md` | The `week-state` shape, **measured** rather than specified. Read before changing `reduce.js`. |
+
+**Two screens, one document.** `Today` answers the 6am question and is what the app opens on; `The
+week` carries all seven days and is reached by a chip, returned from by Telegram's own back arrow.
+There is no second request and no route for the second screen — the whole week already crosses the
+auth boundary in the one `POST /s` response, so there is nothing extra to get the access control
+right on.
 
 Two routes and nothing else: `GET /` serves the document; `POST /s` returns the week as JSON to a
 validated launch and `401` with a **zero-byte body** to everyone else. Any other path is `404`.
@@ -45,11 +52,27 @@ Gitignored, so absent in every fresh clone and **every new git worktree**. Witho
 `cp .dev.vars.example .dev.vars` the happy path fails `401 !== 200`, which reads as an
 access-control regression rather than a missing file.
 
-### 2. Merging is not shipping
+### 2. Merging is not shipping — the trap MOVED, it did not go away
 
-CI now deploys `main` and asserts the edge serves that commit, so this is much less sharp than it
-was — but `scripts/publish.mjs` writes KV **directly**, from a laptop, not through this Worker. The
-page and the week ship on two independent tracks. The only check that settles "is it live":
+The Cloudflare credential landed 2026-09-01, so `deploy production` no longer skips. What replaced
+the old gap is an approval: 🔴 **the `production` environment requires a review**, so a merge sits
+waiting for a click, and until that click `main` is merged and the edge serves the previous commit.
+
+⚠️ **The alarm for that is now dead code.** `deploy (not configured)` — the job that printed *"main
+is merged but NOT shipped"* — fires only when `CLOUDFLARE_ACCOUNT_ID == ''`, which can never be true
+again. Nothing announces an unapproved deployment except `drift.yml`, weekly. So after merging,
+**check the job actually ran**:
+
+```sh
+gh run list --limit 3
+gh run view <id> --json jobs --jq '.jobs[] | "\(.name)\t\(.conclusion)"'
+```
+
+`deploy production: success` is the proof; `pending`, `waiting` or absent means it has not shipped.
+
+Separately, `scripts/publish.mjs` writes KV **directly**, from a laptop, not through this Worker.
+The page and the week ship on two independent tracks. CI now runs this digest check itself, but by
+hand it is still the thing that settles "is the page live":
 
 ```sh
 curl -sS https://today.calvin.sg/ | sed 's/nonce="[^"]*"/nonce="N"/g' | shasum -a 256
@@ -94,7 +117,14 @@ clone — get a current sample from the edge with
 `npx wrangler@4.127.1 kv key get week:current --binding WEEK --remote --text`.
 
 The reverse also holds: a field can be **published but unread**. Check `reduce.js`'s allowlists
-before assuming new data has to be plumbed through.
+before assuming new data has to be plumbed through — that is exactly what `tag`, `bed` and `sport`
+were until the week screen was built, and the artifact had been emitting them for weeks.
+
+🔴 **`note` is refused, and it must stay refused.** It fails on two grounds at once: **2 of 6 notes
+in the live week carry literal `<b>` tags** (and this app renders everything with `textContent`, so
+they would arrive as visible angle brackets), and it is where the *corrections* live — the one
+thing the app is asked never to show. `publish.mjs` now enforces the first mechanically, so a
+future field with the same problem is caught rather than noticed.
 
 ### 5. Two gates, not one
 
@@ -129,3 +159,16 @@ showing stale or empty data as though it were today's.
 `test/initdata.test.mjs` mints `initData` the way **Telegram** mints it, independently, rather than
 by calling the checker's own code — so the suite cannot agree with the checker by construction.
 That is not theoretical: it is how the `signature` bug shipped.
+
+The week screen's controls follow the same rule — each was checked by **breaking the code it
+guards**. The two that matter most: the past/today/ahead boundary at **00:05 SGT** (a UTC
+comparison shifts the whole week by a row, every morning, for eight hours) and an **unknown key
+inside `bed`** (the allowlist has to reach one level down, because `pick` does not recurse).
+
+⚠️ **A control that cannot fail is worse than none.** *"Every status prints its own word"* was
+dropped as a view test — nothing here renders the DOM, so it would have passed with the week screen
+printing no status word at all. The mapping lives in `view.js` for exactly that reason.
+
+⚠️ **`npm test` overwrites `dist/payload.json`**, because `publish.test.mjs` runs the real
+publisher. Re-run `scripts/publish.mjs` before seeding a local KV from that file, or you will seed
+a one-day fixture and spend a while wondering why the week screen has one row.

@@ -57,6 +57,99 @@ function addDays(isoDate, n) {
   return new Date(t + n * 86_400_000).toISOString().slice(0, 10);
 }
 
+/** Whole days between two YYYY-MM-DD, both read at UTC midnight so the span is exact. */
+function daysBetween(fromIso, toIso) {
+  const a = Date.parse(`${fromIso}T00:00:00Z`);
+  const b = Date.parse(`${toIso}T00:00:00Z`);
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
+  return Math.round((b - a) / 86_400_000);
+}
+
+// THE WORD EACH STATUS PRINTS, decided here rather than in the renderer.
+//
+// The design system's rule is that where two states share a treatment, the WORD carries the
+// difference -- and it is the only carrier that survives a forced-colours mode, which replaces
+// every author colour. Keeping the mapping in this file is what makes that rule TESTABLE: nothing
+// in the suite renders the DOM, so a mapping living in app.html could go missing with every test
+// still green. `planned` gets no word: it is the default state and labelling it is noise on the
+// six days that are entirely planned.
+const STATUS_WORDS = {
+  planned: null,
+  done: "done",
+  missed: "missed",
+  skipped_by_design: "skipped",
+};
+
+/**
+ * THE WHOLE WEEK, for the second screen -- classified against the request's own clock, which is
+ * the same rule the Now slot follows and for the same reason: the payload carries seven days, and
+ * which of them is "today" is a fact about when it is READ, never about when it was published.
+ */
+function buildWeek(meta, days, today) {
+  const volume = {
+    plannedKm: meta.plannedKm ?? null,
+    ceilingKm: meta.ceilingKm ?? null,
+    priorWeekKm: meta.priorWeekKm ?? null,
+    // NULL, NOT ZERO, and the renderer draws no bar for it. A ceiling nobody published and a week
+    // measured at 0% of its ceiling are different facts; leaving the bar undrawn is the only way
+    // the picture can tell them apart.
+    fraction: null,
+    stepPct: null,
+  };
+  if (Number.isFinite(volume.plannedKm) && Number.isFinite(volume.ceilingKm) && volume.ceilingKm > 0) {
+    volume.fraction = volume.plannedKm / volume.ceilingKm;
+  }
+  if (Number.isFinite(volume.plannedKm) && Number.isFinite(volume.priorWeekKm) && volume.priorWeekKm > 0) {
+    volume.stepPct = ((volume.plannedKm - volume.priorWeekKm) / volume.priorWeekKm) * 100;
+  }
+
+  const weekDays = days.map((day) => {
+    const sessions = (day.sessions ?? []).map((s) => ({
+      ...s,
+      // An unrecognised status prints ITSELF rather than being swallowed: a word nobody planned
+      // for is still information, and hiding it is how a new upstream state goes unnoticed. The
+      // underscores come out, because `skipped_by_design` on screen is a name that only makes
+      // sense once you know how the data is stored -- and CONTRACT.md is explicit that the four
+      // statuses seen so far are a frozen sample rather than an enum.
+      statusWord: Object.prototype.hasOwnProperty.call(STATUS_WORDS, s.status)
+        ? STATUS_WORDS[s.status]
+        : String(s.status).replace(/_/g, " "),
+    }));
+    return {
+      date: day.date,
+      dow: day.dow ?? "",
+      tag: day.tag ?? null,
+      bed: day.bed ?? null,
+      // STRING COMPARISON against the SGT date, never `new Date(nowMs)`. Both sides are
+      // YYYY-MM-DD in the same calendar so this is exact -- and it is the comparison a UTC Date
+      // gets wrong for the eight hours after midnight in Singapore, when "today" in London is
+      // still yesterday here and the whole week shifts by one row.
+      phase: day.date < today ? "past" : day.date === today ? "today" : "ahead",
+      sessions,
+      // WHAT A SPENT DAY IS SUMMARISED BY. This was `doneCount` alone, and that quietly lost every
+      // other outcome: a day with one done and two missed collapsed to "1 done", which reads as a
+      // light day when it was the opposite. A day is summarised by everything that happened on it
+      // or by nothing at all. `other` catches `planned` left on a past day -- a session nobody
+      // recorded -- which is its own fact and not the same as a rest.
+      counts: {
+        total: sessions.length,
+        done: sessions.filter((s) => s.status === "done").length,
+        missed: sessions.filter((s) => s.status === "missed").length,
+        skipped: sessions.filter((s) => s.status === "skipped_by_design").length,
+        other: sessions.filter((s) => !["done", "missed", "skipped_by_design"].includes(s.status)).length,
+      },
+    };
+  });
+
+  return {
+    days: weekDays,
+    volume,
+    // The countdown the artifact carries in its masthead. `kiprunDate` has been published and
+    // never rendered since the first version; this is the whole cost of showing it.
+    daysToKiprun: meta.kiprunDate ? daysBetween(today, meta.kiprunDate) : null,
+  };
+}
+
 /**
  * @param {object|null} payload as produced by reduce.js, or null when KV holds nothing
  * @param {number} nowMs
@@ -102,6 +195,9 @@ export function buildView(payload, nowMs) {
     inProgress: false,
     laterCount: 0,
     emptyReason: null,
+    // The second screen. Built unconditionally, because the week is worth reading on exactly the
+    // days the Now slot has nothing to say -- a rest day, or an evening when everything is done.
+    week: buildWeek(meta, days, today),
   };
 
   // Today and the next two days, by date -- not by position, because a payload is not required
