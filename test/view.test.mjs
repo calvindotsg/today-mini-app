@@ -39,14 +39,79 @@ test("Now is the next PLANNED session ahead of the clock; Next is the one after"
   assert.equal(v.laterCount, 0);
 });
 
-test("a session already under way is behind you and never occupies Now", () => {
+test("a session that finished long ago is behind you and never occupies Now", () => {
   const p = payload([day("2026-08-24", "Monday", [
     sess({ title: "Morning", at: "2026-08-24T06:15" }),
     sess({ title: "Evening", at: "2026-08-24T18:00" }),
   ])]);
   const v = buildView(p, SGT("2026-08-24T12:00"));
   assert.equal(v.now.title, "Evening");
+  assert.equal(v.inProgress, false);
   assert.equal(v.next, null);
+});
+
+// THE SESSION HE IS STANDING IN. Before this, Now flipped to tomorrow's gym at the instant
+// tonight's run began -- which is the instant he is at the start line with the phone in his hand.
+test("a session under way holds Now until the artifact says it is over", () => {
+  const p = payload([
+    day("2026-08-24", "Monday", [sess({ title: "Meeting", at: "2026-08-24T20:00", until: "2026-08-24T21:00" })]),
+    day("2026-08-25", "Tuesday", [sess({ title: "Gym", at: "2026-08-25T06:15" })]),
+  ]);
+  const during = buildView(p, SGT("2026-08-24T20:30"));
+  assert.equal(during.now.title, "Meeting", "under way is not the same as behind you");
+  assert.equal(during.inProgress, true);
+  assert.equal(during.next.title, "Gym", "and what follows is still what follows");
+
+  const after = buildView(p, SGT("2026-08-24T21:01"));
+  assert.equal(after.now.title, "Gym");
+  assert.equal(after.inProgress, false);
+});
+
+// `until` is stated on 2 of the 20 sessions in the live week, so the fallback IS the common path.
+test("with no stated end, a session holds Now for the grace and no longer", () => {
+  const p = payload([
+    day("2026-08-24", "Monday", [sess({ title: "ARC", at: "2026-08-24T19:24", leaveBy: "2026-08-24T19:00" })]),
+    day("2026-08-25", "Tuesday", [sess({ title: "Gym", at: "2026-08-25T06:15" })]),
+  ]);
+  const during = buildView(p, SGT("2026-08-24T20:00"));
+  assert.equal(during.now.title, "ARC");
+  assert.equal(during.inProgress, true);
+
+  // 19:24 + 90 min = 20:54. Past that the evening is his and tomorrow morning is the question.
+  const after = buildView(p, SGT("2026-08-24T21:00"));
+  assert.equal(after.now.title, "Gym", "the grace must not hide tomorrow all evening");
+  assert.equal(after.inProgress, false);
+});
+
+// NEGATIVE CONTROL 5 -- the grace must never swallow the next thing he has to leave for. This is
+// Sunday 6 September as published: a wake alarm at 04:15 that states no end, and a ride whose
+// leaveBy is 04:55. A blind 90-minute hold covers 04:55 and hides the one number this app exists
+// to show.
+test("a session's hold ends where the next session's claim on him begins", () => {
+  const p = payload(
+    [day("2026-09-06", "Sunday", [
+      sess({ kind: "Wake · 04:15", title: "Wake", at: "2026-09-06T04:15" }),
+      sess({ kind: "Ride · 05:45", title: "KCC SUN Ride", at: "2026-09-06T05:45", leaveBy: "2026-09-06T04:55" }),
+    ])],
+    { weekStart: "2026-08-31", weekEnd: "2026-09-06" },
+    "2026-09-06T04:00:00+08:00",
+  );
+  const woken = buildView(p, SGT("2026-09-06T04:30"));
+  assert.equal(woken.now.title, "Wake");
+  assert.equal(woken.inProgress, true);
+
+  const leaving = buildView(p, SGT("2026-09-06T04:56"));
+  assert.equal(leaving.now.title, "KCC SUN Ride", "04:55 must not be buried under the alarm's grace");
+  assert.equal(leaving.inProgress, false, "the ride has not started -- the screen must still say Leave by");
+});
+
+test("an `until` at or before the start is upstream nonsense, not an instant expiry", () => {
+  const p = payload([day("2026-08-24", "Monday", [
+    sess({ title: "Backwards", at: "2026-08-24T18:00", until: "2026-08-24T17:00" }),
+  ])]);
+  const v = buildView(p, SGT("2026-08-24T18:30"));
+  assert.equal(v.now.title, "Backwards", "a session must not expire at birth on bad data");
+  assert.equal(v.inProgress, true);
 });
 
 // NEGATIVE CONTROL 1 -- every optional field absent. `leaveBy` is absent from 0 of 17 sessions in
