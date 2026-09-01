@@ -57,8 +57,12 @@ before(async () => {
     v: 1,
     generatedAt: new Date().toISOString().slice(0, 19) + "+08:00",
     meta: { weekLabel: "Test week", weekStart: "2000-01-01", weekEnd: "2099-12-31" },
+    // The day-level fields are seeded with their own distinctive values because the week screen
+    // publishes them, and "no user data without auth" has to cover what was added last rather
+    // than only what was there when the assertion was written.
     days: [{ date: new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10), dow: "Today",
-             sessions: [{ kind: "Run · test", title: "ZZTITLEZZ", status: "planned",
+             tag: "ZZTAGZZ", bed: { plan: "22:15", kind: "ZZKINDZZ", text: "ZZBEDZZ" },
+             sessions: [{ kind: "Run · test", title: "ZZTITLEZZ", status: "planned", sport: "run",
                           place: "ZZPLACEZZ", leaveBy: "2099-01-01T05:55", oneRule: "ZZRULEZZ" }] }],
   };
   const { writeFileSync, mkdirSync } = await import("node:fs");
@@ -94,6 +98,11 @@ test("valid initData for Calvin -> 200 and the week, as JSON", async () => {
   assert.equal(view.ok, true);
   assert.equal(view.now.title, "ZZTITLEZZ", "the week must cross the boundary only here");
   assert.equal(view.now.place, "ZZPLACEZZ");
+  // The second screen's data comes through the SAME authenticated response. There is no second
+  // request for it, so there is no second thing to get the access control right on.
+  assert.equal(view.week.days[0].tag, "ZZTAGZZ");
+  assert.equal(view.week.days[0].bed.text, "ZZBEDZZ");
+  assert.equal(view.week.days[0].sessions[0].sport, "run");
 });
 
 test("valid signature, DIFFERENT user.id -> 401, no content", async () => {
@@ -129,7 +138,7 @@ test("GET / carries the renderer but none of the week's content", async () => {
   const res = await fetch(`${BASE}/`);
   const body = await res.text();
   assert.equal(res.status, 200);
-  for (const secret of ["ZZTITLEZZ", "ZZPLACEZZ", "ZZRULEZZ", "2099-01-01T05:55"]) {
+  for (const secret of ["ZZTITLEZZ", "ZZPLACEZZ", "ZZRULEZZ", "ZZTAGZZ", "ZZKINDZZ", "ZZBEDZZ", "2099-01-01T05:55"]) {
     assert.doesNotMatch(body, new RegExp(secret), `the unauthenticated page leaked ${secret}`);
   }
   assert.doesNotMatch(body, /week:current/, "nor the name of where the week lives");
@@ -237,8 +246,13 @@ test("a theme swap snaps rather than ramping the chips across the old palette", 
   // The chip's 300ms ramp is its hover and press affordance. A theme change moves every token at
   // once, so without suppression the ground flips instantly while the chips ease -- an
   // acknowledgement of the press arriving after the press.
-  assert.match(body, /:root\[data-swapping\] \.theme label\{transition:none\}/,
-    "the swap must suppress the chip ramp");
+  // BOTH WEARERS OF THE SURFACE, which is the half that was missed the first time. The navigation
+  // chip shares the quiet box, the hover and the press with the theme options -- so it also
+  // inherits the 300ms ramp, and suppressing the ramp on only one of them leaves the other easing
+  // across the OLD palette on the NEW ground. Caught in a browser, not by this suite, because the
+  // assertion below named one selector.
+  assert.match(body, /:root\[data-swapping\] \.theme label,:root\[data-swapping\] \.chip\{transition:none\}/,
+    "the swap must suppress the ramp on EVERY control wearing the chip surface");
   assert.match(body, /setAttribute\("data-swapping", ""\)[\s\S]*offsetWidth[\s\S]*removeAttribute\("data-swapping"\)/,
     "and must force a reflow between setting and clearing it, or nothing is suppressed");
 });
