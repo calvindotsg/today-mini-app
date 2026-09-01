@@ -4,7 +4,7 @@
   "type": "module",
   "description": "today.calvin.sg — a Telegram Mini App showing the next training session and the one after it",
   "scripts": {
-    "test": "node --test test/",
+    "test": "node --test test/*.test.mjs",
     "test:auth": "node --test test/worker.http.test.mjs",
     "dev": "npx --yes wrangler@4.127.1 dev",
     "deploy": "npx --yes wrangler@4.127.1 deploy",
