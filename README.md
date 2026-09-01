@@ -1,36 +1,58 @@
 # today.calvin.sg
 
-A Telegram Mini App that answers one question from inside the chat with
-[@calvindotsg_bot](https://t.me/calvindotsg_bot): **what's on today, and what's next.**
+[![today.calvin.sg live](https://img.shields.io/website?url=https%3A%2F%2Ftoday.calvin.sg&label=today.calvin.sg&up_message=live&down_message=down)](https://today.calvin.sg)
+[![Build status](https://img.shields.io/github/actions/workflow/status/calvindotsg/today-mini-app/ci.yml?branch=main&label=build)](https://github.com/calvindotsg/today-mini-app/actions/workflows/ci.yml)
+[![Last commit](https://img.shields.io/github/last-commit/calvindotsg/today-mini-app/main?label=last%20commit)](https://github.com/calvindotsg/today-mini-app/commits/main/)
+[![License](https://img.shields.io/github/license/calvindotsg/today-mini-app)](./LICENSE)
 
-Not a dashboard. Strava and Garmin Connect already cover history, splits and volume. What no
-other app can show is *the plan* — where to be, and **what time to leave**, which is the number
-that changes behaviour at 6am.
+Hi, I am Calvin. I run and ride before sunrise, and a training assistant writes my week as a
+Claude artifact. This is the one screen that answers the only question I have at 6am, from inside
+my chat with [@calvindotsg_bot](https://t.me/calvindotsg_bot): **what's on today, and what time do
+I leave.**
 
-One screen. One session, the one after it, and an honest line when neither exists. The session
-in front of him **stays** in front of him while it is under way — until `until`, or a bounded
-grace where the artifact states none, and never past the moment the next session claims him.
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/preview-dark.png">
+  <img alt="The one screen: a threshold run, with LEAVE BY 17:12 set in the largest type on the page, the place and travel time under it, and tomorrow's session in a Next card below" src="docs/preview-light.png">
+</picture>
 
----
+Not a dashboard. Strava and Garmin Connect already cover history, splits and volume. What no other
+app can show me is *the plan* — where to be, and **what time to leave**, which is the number that
+changes what I actually do.
 
-## The architecture, and the reason for it
+## Overview
+
+| | What it shows |
+| --- | --- |
+| **Now** | The session I am in, or the next one I have to leave for. `Leave by` where the plan states one, the start time where it does not, and `Until` while a session is under way. Place, travel time, the one rule for the session, and what to bring |
+| **Next** | The one after it, so I can see whether tonight commits me to a 6am tomorrow |
+| **Neither** | An honest line. A rest day says so; a plan that does not cover today says *that*, separately from a plan that is merely old |
+
+The session in front of me **stays** in front of me while it is under way — until the plan's own
+`until`, or a bounded grace where it states none, and never past the moment the next session claims
+me.
+
+Three theme states, applied before first paint: system, light, dark. The page also tells Telegram
+what colour it is painted, so the chrome above it matches instead of seaming.
+
+## Background
+
+The training assistant this belongs to runs on a box whose firewall carries **zero inbound rules** —
+nothing reaches it — and whose egress goes through a short allowlist. Serving this app from there
+would be the first open door on a machine that has none.
+
+So it is served from the edge instead, and it holds **one week of a training plan and nothing
+else**:
 
 ```
   a Claude session ──► scripts/publish.mjs ──► Cloudflare KV ──► Worker ──► Telegram
-   (reads the weekly                                              │
-    training artifact)                                            └── validates initData,
-                                                                      refuses anyone but Calvin
+   (reads the weekly                                             │
+    training artifact)                                           └── validates initData,
+                                                                     refuses anyone but me
 ```
 
-The training assistant this belongs to runs on a Hetzner box whose firewall carries **zero
-rules** — nothing inbound reaches it, and its egress goes through an eleven-host allowlist.
-Serving this app from that box would be the first open door on a machine that has none.
-
-So it is served from the edge instead, and it holds **one week of a training plan and nothing
-else**. If this Worker were fully compromised, an attacker gets Calvin's session times. Not the
-server, not a credential for it, not the agent. That containment is the design, not a
-side effect — see `wrangler.jsonc` and `src/worker.js`, which both say so at the point it
-would be easy to widen.
+If this Worker were fully compromised, an attacker gets my session times. Not the server, not a
+credential for it, not the agent. **That containment is the design, not a side effect** — and both
+`wrangler.jsonc` and `src/worker.js` say so at the exact point where widening it would be tempting.
 
 ## How a stranger is kept out
 
@@ -39,102 +61,156 @@ Telegram signs every launch. The Worker checks that signature and then checks wh
 1. HMAC-SHA256 over the launch parameters, keyed by `HMAC(bot_token, "WebAppData")`, compared in
    **constant time** (`src/initdata.js`).
 2. `auth_date` no more than **15 minutes** old, so a captured launch cannot be replayed later.
+   Future-dated launches are refused too.
 3. `user.id` equal to the configured id — **the actual access control.** Steps 1 and 2 prove the
    launch is real; only this decides whose it was.
 
-A failure at any step is `401` with a **zero-byte body** and no content type. `test/worker.http.test.mjs`
-asserts the body length on every rejection, because a 401 that still ships the page is a real bug.
+Step 3 is the one worth stating plainly, because it is counter-intuitive: **a stranger's `initData`
+is cryptographically valid.** Telegram signs every launch with the same bot token, so a suite that
+only tests the signature passes completely while the app admits everyone. The test that matters is
+*a correctly-signed launch belonging to somebody else*, and it is the one most likely to be skipped.
 
-### Why there is a shell at all
+A failure at any step is `401` with a **zero-byte body** and no content type.
+`test/worker.http.test.mjs` asserts the body length on every rejection, because a 401 that still
+ships the page is a real bug and an easy one to write.
+
+### Why an unauthenticated visitor still gets a page
 
 Telegram puts the launch parameters in the URL **fragment**, which is never sent to a server. No
-server can validate a Mini App launch on the first GET — so `src/bootstrap.html` reads the
-fragment and POSTs it. That shell holds **no plan, no design system and no allowlist**: a test
-asserts it contains none of the plan's vocabulary and stays under 4 KB. The app and the week's
-data arrive together, in one authenticated response, so there is no data endpoint to attack.
+server can validate a Mini App launch on the first `GET` — so some document is always served before
+anyone is proven.
 
-## Setup
+This used to be a contentless shell that replaced itself with the real page. That design is wrong
+behind a nonce-based CSP and fails silently: `document.write` does not create a new document, so
+the written markup is judged against the *first* response's policy, the second nonce matches
+nothing, every inline style and script is dropped, and the result is a blank page on an unstyled
+background — with two successful 200s in the log.
 
-```bash
+So: **one document, one nonce.** `GET /` carries the design and the renderer and **no training
+data**. `POST /s` returns the week as JSON to a validated launch and 401-empty to everyone else.
+The defensible property is *no user data without auth*, and a test asserts it against distinctive
+values seeded into the store rather than against a guess at what the real content looks like.
+
+## Tech stack
+
+A [Cloudflare Worker](https://developers.cloudflare.com/workers/) with a
+[Workers KV](https://developers.cloudflare.com/kv/) namespace, five source files, and **zero
+dependencies** — no framework, no bundler, no lockfile. Even `telegram-web-app.js` is avoided: the
+two things it is needed for are one `postEvent` each over the documented bridge, about 25 lines
+inline, and if the bridge is missing the page still renders.
+
+`node --test` is the change gate. The hostname resolves through a proxied `AAAA` record in
+[`calvindotsg/portfolio-v2`](https://github.com/calvindotsg/portfolio-v2)'s octoDNS zone, added by
+pull request; this Worker attaches with a **route**, not a custom domain, so it never writes DNS —
+see the comment in `wrangler.jsonc` for what breaks if that is "simplified".
+
+## Getting started
+
+```sh
+git clone https://github.com/calvindotsg/today-mini-app
+cd today-mini-app
+cp .dev.vars.example .dev.vars   # ← first, or the auth suite fails in a confusing way
+npm test
+```
+
+There is nothing to install. `.dev.vars.example` holds a **fake** bot token, and the suite mints its
+own `initData` against it, so every auth path is exercised without a real credential. See
+[CONTRIBUTING.md](./CONTRIBUTING.md) for why that copy is load-bearing.
+
+| Command | What it does |
+| --- | --- |
+| `npm test` | The whole suite, 47 tests |
+| `npm run test:auth` | Just the HTTP auth suite, against the real Worker in the real runtime |
+| `npm run dev` | `wrangler dev` on an emulated KV |
+| `npm run deploy` | Ships to `today.calvin.sg` — CI also does this on merge |
+| `npm run publish:week` | Reduces a weekly artifact and writes it to KV |
+
+First-time setup of a fresh deployment:
+
+```sh
 npx wrangler kv namespace create WEEK        # once; put the id in wrangler.jsonc
-npx wrangler secret put BOT_TOKEN            # @calvindotsg_bot's token, from 1Password
+npx wrangler secret put BOT_TOKEN            # the bot's token
 npx wrangler secret put ALLOWED_USER_ID      # the one Telegram user id allowed in
 npx wrangler deploy
 ```
 
-Both are **secrets**, never `vars`: one is the bot's whole identity, and the other is a personal
-identifier this repository has no reason to carry. The Worker **fails closed** without them —
-`test/worker.http.test.mjs` proves a valid launch is still refused when `ALLOWED_USER_ID` is
-unset, which is the mistake that would otherwise make the app public.
+## Configuration
 
-The hostname resolves through a **proxied AAAA record in
-[`calvindotsg/portfolio-v2`](https://github.com/calvindotsg/portfolio-v2)'s octoDNS zone**, added
-by pull request. This Worker attaches with a **route**, not a custom domain, so it never writes
-DNS — see the comment in `wrangler.jsonc` for what breaks if that is "simplified".
+| Where | What lives there |
+| --- | --- |
+| Worker **secrets** | `BOT_TOKEN`, `ALLOWED_USER_ID`. Never `vars` — one is the bot's whole identity, and the other is a personal identifier this repository has no reason to carry |
+| `wrangler.jsonc` | The route, the KV binding, the compatibility date. No secrets, no observability — the only interesting request carries a launch credential, and the cheapest way to never log it is to log nothing |
+| GitHub environment `production` | `CLOUDFLARE_API_TOKEN` for the deploy, behind a branch policy limited to `main` |
+| GitHub variable | `CLOUDFLARE_ACCOUNT_ID` — a variable rather than a secret, because masking a value that appears in wrangler's own error output redacts unrelated log lines |
+
+The Worker **fails closed** without its secrets. `test/worker.http.test.mjs` proves a valid launch
+is still refused when `ALLOWED_USER_ID` is unset, which is the mistake that would otherwise make
+the app public on the day someone forgets a `wrangler secret put`.
 
 ## Publishing a week
 
-```bash
+```sh
 node scripts/publish.mjs ~/path/to/week.html --put
 ```
 
-**A cron cannot do this.** The week lives in a private Claude artifact, readable only by a Claude
-session — the box has no route to `claude.ai`, and a script on the Mac has no credential for it.
-So publishing is on demand: a Claude session saves the artifact and runs the publisher when the
-week's plan is written or revised.
+**A cron cannot do this.** The week lives in a private Claude artifact readable only by a Claude
+session — the box has no route to `claude.ai`, and a script on my Mac has no credential for it. So
+publishing is on demand, when the week's plan is written or revised.
 
-That is exactly why the app treats freshness as something to **state**, not assume. It shows two
-different kinds of out-of-date, separately, because conflating them hides the worse one:
+Which is exactly why the app treats freshness as something to **state** rather than assume. It
+shows two different kinds of out-of-date, separately, because conflating them hides the worse one:
 
 - **stale** — the push is more than 18 hours old.
 - **not this week** — the plan's own `weekStart`/`weekEnd` do not contain today. A plan pushed an
   hour ago for last week is *fresh and useless*, and only the second banner says so.
 
-### Payload size
+The publisher pushes the **whole week**, reduced to twelve fields per session — 12.4 KB for a real
+week, 3.9 KB brotli on the wire — and refuses above a 24 KB ceiling. The Worker slices to
+today-and-the-next-two per request, because a slice baked in at publish time is correct on the day
+it is pushed and useless by Wednesday.
 
-The publisher pushes the **whole week**, reduced to twelve fields per session:
-**12.4 KB** for a real week (3.9 KB brotli on the wire), against the plan's 8 KB target.
+## Testing
 
-That target assumed a three-day slice baked in at publish time. With an on-demand publisher a
-baked slice is correct on the day it is pushed and useless by Wednesday, so the **Worker** slices
-to today-and-the-next-two per request instead, and the payload has to carry the week. Measured:
-the week cannot fit in 8 KB with the fields the app needs — `intention` and `numbers` alone are
-45% of it. The publisher enforces a **24 KB ceiling** and refuses above it.
-
-## Tests
-
-```bash
+```sh
 npm test          # 47 tests
 ```
 
-- `test/initdata.test.mjs` — the signature algorithm, against initData minted the way Telegram
-  mints it rather than by the checker's own code.
-- `test/view.test.mjs` — the five negative controls: every optional field absent, a day with
-  nothing actionable left, data past the staleness threshold, an empty `days` array, and a
-  session's hold on the screen running past the next thing he has to leave for. Without these
-  the app would pass its tests while showing stale or empty data as though it were today's.
-- `test/worker.http.test.mjs` — the real Worker in the real runtime, over HTTP. **The case that
-  matters is a correctly-signed launch belonging to somebody else**; a suite that only checks the
-  happy path proves nothing about an access control.
+- `test/initdata.test.mjs` — the signature algorithm, against `initData` minted the way **Telegram**
+  mints it rather than by the checker's own code. That is not a stylistic choice: an earlier version
+  folded `signature` into the data-check string, which broke every launch from a real client while
+  every hand-minted fixture still passed.
+- `test/view.test.mjs` — five negative controls: every optional field absent, a day with nothing
+  actionable left, data past the staleness threshold, an empty `days` array, and a session's hold
+  on the screen running past the next thing I have to leave for. Without these the app would pass
+  its tests while showing stale or empty data as though it were today's.
+- `test/worker.http.test.mjs` — the real Worker in the real runtime, over HTTP.
+
+CI runs the suite on Node 22, 24 and 26, then deploys `main` and asserts the edge is serving that
+exact commit. `.github/workflows/drift.yml` re-checks that weekly, because `scripts/publish.mjs`
+writes KV directly and the page and the data ship on two independent tracks.
 
 ## Files
 
 | | |
 |---|---|
-| `src/worker.js` | routes, auth, security headers. The whole server. |
-| `src/initdata.js` | Telegram signature validation. Deliberately small so it can be re-read against the docs in a minute. |
-| `src/reduce.js` | week-state → the published payload. Two allowlists. |
-| `src/view.js` | payload + a clock → what the one screen shows. Pure; no DOM. |
-| `src/bootstrap.html` | the contentless shell. |
-| `src/app.html` | the one screen, in the calvin.sg design system. |
-| `scripts/publish.mjs` | the publisher. |
-| `CONTRACT.md` | the `week-state` shape, **measured** across two artifacts. Read this before changing `reduce.js`. |
+| `src/worker.js` | Routes, auth, security headers. The whole server |
+| `src/initdata.js` | Telegram signature validation. Deliberately small so it can be re-read against the docs in a minute |
+| `src/reduce.js` | week-state → the published payload. Two allowlists |
+| `src/view.js` | payload + a clock → what the one screen shows. Pure; no DOM |
+| `src/app.html` | The one screen, in the calvin.sg design system |
+| `scripts/publish.mjs` | The publisher |
+| `CONTRACT.md` | The `week-state` shape, **measured** across two artifacts. Read this before changing `reduce.js` |
+| `CLAUDE.md` | Reference for agents working in this repository |
 
 ## If this is ever retired
 
-**Delete the KV data** rather than leaving it. It is a copy of personal training data at the
-edge, and a store nobody reads is still a store somebody could.
+**Delete the KV data** rather than leaving it. It is a copy of personal training data at the edge,
+and a store nobody reads is still a store somebody could.
 
-```bash
+```sh
 npx wrangler kv key delete week:current --binding WEEK --remote
 ```
+
+## License
+
+[MIT](./LICENSE).

@@ -8,10 +8,14 @@ rather than published half-understood.
 
 Measured from:
 
-| | artifact | title | shape |
-|---|---|---|---|
-| **A** | `ffe75c16-522f-4078-ab14-c8249f45cc5a` | *Hills, Then Sixteen* | the live **plan** page, week of 24–30 Aug 2026 |
-| **B** | `fc5558d4-e575-47d2-9e60-d174f0653732` | *Four Anchors* | a **closeout** page, week of 17–23 Aug 2026 |
+| | shape | week |
+|---|---|---|
+| **A** | the live **plan** page | 24–30 Aug 2026 |
+| **B** | a **closeout** page | 17–23 Aug 2026 |
+
+The two artifacts are private pages in the Claude project that writes them, so they are identified
+here by shape rather than by id. Nothing below depends on being able to open them — the table is
+the measurement.
 
 ## The finding that matters most
 

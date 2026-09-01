@@ -19,9 +19,27 @@ const BASE = `http://127.0.0.1:${PORT}`;
 
 let dev;
 
+// 🔴 `npx` is a WRAPPER, and signalling it does not signal what it started.
+//
+// `npx wrangler dev` becomes npx -> sh -> wrangler -> {esbuild, workerd, workerd}. `child.kill()`
+// reaches the first of those and nothing else, so the grandchildren survive holding the stdio pipes
+// this process is still reading — and `node --test` will not exit while a pipe is open. Spawning
+// DETACHED makes the child a process-group leader, and `process.kill(-pid)` then signals the whole
+// group.
+//
+// It cost fifteen minutes of a CI runner to find, and the shape of the failure is why: every test
+// PASSED, and the job then sat at 100% for the full timeout with an empty log. macOS happens to
+// tear the tree down anyway, so it reproduces only on Linux. The runner's own cleanup named them —
+// "Terminate orphan process: (workerd)", twice per wrangler.
+function stop(child) {
+  if (!child?.pid) return;
+  try { process.kill(-child.pid, "SIGTERM"); } catch { /* group already gone */ }
+  try { child.kill("SIGTERM"); } catch { /* ditto */ }
+}
+
 before(async () => {
   dev = spawn("npx", ["--yes", "wrangler@4.127.1", "dev", "--local", "--port", String(PORT), "--inspector-port", "0"],
-    { cwd: ROOT, stdio: ["ignore", "pipe", "pipe"] });
+    { cwd: ROOT, stdio: ["ignore", "pipe", "pipe"], detached: true });
   dev.stdout.on("data", () => {});
   dev.stderr.on("data", () => {});
   const deadline = Date.now() + 90_000;
@@ -52,7 +70,7 @@ before(async () => {
     { cwd: ROOT, stdio: "ignore" });
 });
 
-after(() => { dev?.kill("SIGTERM"); });
+after(() => { stop(dev); });
 
 const post = (initData) => fetch(`${BASE}/s`, {
   method: "POST", body: initData,
@@ -255,7 +273,7 @@ test("with ALLOWED_USER_ID unset, a VALID launch for Calvin is still refused", a
   const port = PORT + 2;
   const child = spawn("npx", ["--yes", "wrangler@4.127.1", "dev", "--local", "--port", String(port),
     "--inspector-port", "0", "--var", "ALLOWED_USER_ID:"],
-    { cwd: ROOT, stdio: ["ignore", "pipe", "pipe"] });
+    { cwd: ROOT, stdio: ["ignore", "pipe", "pipe"], detached: true });
   child.stdout.on("data", () => {}); child.stderr.on("data", () => {});
   try {
     const deadline = Date.now() + 90_000;
@@ -278,6 +296,6 @@ test("with ALLOWED_USER_ID unset, a VALID launch for Calvin is still refused", a
     });
     await assertDenied(res, "unconfigured worker");
   } finally {
-    child.kill("SIGTERM");
+    stop(child);
   }
 });

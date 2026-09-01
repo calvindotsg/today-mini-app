@@ -1,0 +1,108 @@
+name: Deploy drift
+
+# WHAT THIS CATCHES THAT ci.yml's DEPLOY DOES NOT.
+#
+# `npm run deploy` still works from a laptop, and scripts/publish.mjs writes the week to KV through
+# the Cloudflare API rather than through this Worker -- so the page and the data ship on two
+# independent tracks and either can go stale while the other is current. A deploy job proves the
+# edge matched `main` at the moment it ran; this proves it still does.
+on:
+  schedule:
+    # 08:00 SGT Monday, which is 00:00 UTC.
+    - cron: "0 0 * * 1"
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      expected_sha256:
+        description: "Override the expected digest, to exercise the drift path on purpose."
+        required: false
+        type: string
+
+# The push trigger is LOAD-BEARING, not belt-and-braces: GitHub disables scheduled workflows on
+# public repositories after 60 days of repository inactivity, and this repository has gone that
+# quiet before. A push keeps the schedule alive. If it does get disabled, GitHub shows a banner on
+# the Actions tab and it is re-enabled from there.
+
+permissions:
+  contents: read
+  # 🔴 REQUIRED, and its absence fails only on the run that matters. The repository default is
+  # `read` (setup-repo.sh pins it), so without this line `gh issue create` 403s the first time real
+  # drift is found -- every green run before that passes, proving nothing.
+  issues: write
+
+concurrency:
+  group: deploy-drift
+  cancel-in-progress: false
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - id: compare
+        name: Compare the live page to this tree
+        run: |
+          want="${{ inputs.expected_sha256 }}"
+          if [ -z "$want" ]; then
+            want=$(sed 's/__NONCE__/N/g' src/app.html | shasum -a 256 | cut -d' ' -f1)
+          fi
+          got=$(curl -sS --fail --max-time 20 https://today.calvin.sg/ \
+                | sed 's/nonce="[^"]*"/nonce="N"/g' | shasum -a 256 | cut -d' ' -f1) || got=""
+          {
+            echo "want=${want}"
+            echo "got=${got}"
+          } >> "$GITHUB_OUTPUT"
+          if [ "$got" = "$want" ]; then
+            echo "drifted=false" >> "$GITHUB_OUTPUT"
+            echo "In sync: ${want}" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "drifted=true" >> "$GITHUB_OUTPUT"
+            echo "DRIFT: live=${got:-<unreachable>} want=${want}" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Open or update the drift issue
+        if: steps.compare.outputs.drifted == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          WANT: ${{ steps.compare.outputs.want }}
+          GOT: ${{ steps.compare.outputs.got }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        # DEDUPE BY LABEL, NOT BY TITLE.
+        #
+        # This repository is public, so a known issue title is capturable: anyone can pre-create an
+        # issue with that exact title and own the thread this workflow then comments into. A label
+        # can only be applied by someone with write access, so selecting on it cannot be squatted.
+        #
+        # ⚠️ Do NOT add `--author app/github-actions` to narrow it further. That is SEARCH syntax;
+        # `gh issue list` does not accept it, returns nothing, and the workflow silently opens a
+        # duplicate issue on every run instead of failing.
+        run: |
+          body=$(printf '%s\n' \
+            "The Worker serving https://today.calvin.sg/ does not match \`src/app.html\` on \`main\`." \
+            "" \
+            "| | sha256 |" \
+            "|---|---|" \
+            "| this tree | \`${WANT}\` |" \
+            "| live | \`${GOT:-unreachable}\` |" \
+            "" \
+            "Merging is not shipping in this repository -- \`scripts/publish.mjs\` writes KV" \
+            "directly, and a laptop can still run \`npm run deploy\`. Re-run the CI workflow on" \
+            "\`main\` to redeploy, or investigate why the route is serving something else." \
+            "" \
+            "[Run log](${RUN_URL})")
+          existing=$(gh issue list --state open --label deploy-drift --limit 1 --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$body"
+            echo "commented on #${existing}" >> "$GITHUB_STEP_SUMMARY"
+          else
+            gh issue create --title "Deploy drift: the edge is not serving main" \
+                            --label deploy-drift --body "$body"
+          fi
+
+      - name: Fail the run so the drift is visible on the Actions tab too
+        if: steps.compare.outputs.drifted == 'true'
+        run: exit 1

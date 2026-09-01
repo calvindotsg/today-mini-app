@@ -1,0 +1,25 @@
+version: 2
+
+# Every `uses:` in .github/workflows/ is pinned to a 40-character commit SHA, which is what makes an
+# upstream tag move (the tj-actions/changed-files scenario, CVE-2025-30066) a non-event here. The
+# cost of that is pins going stale silently, so Dependabot exists to bump them on a reviewed PR --
+# it rewrites both the SHA and the trailing `# vN` comment. Without this, pinning trades a
+# supply-chain risk for an unpatched-dependency one.
+#
+# THERE IS DELIBERATELY NO `npm` BLOCK. package.json declares zero dependencies and this repository
+# has no lockfile: the Worker is five source files on the Workers runtime, and the only third-party
+# code that ever runs is wrangler, fetched by `npx` at test and deploy time.
+#
+# ⚠️ THAT MEANS THE WRANGLER PIN IS NOT DEPENDABOT-MANAGED, and nothing will tell you it has aged.
+# It is written in three places -- package.json's `dev` and `deploy` scripts, scripts/publish.mjs's
+# WRANGLER constant, and .github/workflows/ci.yml's WRANGLER_VERSION. Bumping it is a decision
+# rather than a chore: the workerd that version bundles must support wrangler.jsonc's
+# `compatibility_date`, and a version that does not fails as `wrangler dev` never coming up.
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: ci
+      include: scope
