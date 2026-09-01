@@ -33,6 +33,10 @@ jobs:
   test-matrix:
     name: node ${{ matrix.node-version }}
     runs-on: ubuntu-latest
+    # The suite spawns `wrangler dev` twice and polls each for up to 90 s. If a spawn hangs BEFORE
+    # wrangler starts -- an npx resolve stalling, say -- neither deadline applies and the job runs
+    # to the 6-hour default. Failing at 15 minutes turns that into a signal instead of a bill.
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -58,6 +62,17 @@ jobs:
       # bot credential is needed to exercise every auth path.
       - name: Provide the fake local secrets the suite signs against
         run: cp .dev.vars.example .dev.vars
+
+      # Warm the npx cache OUTSIDE the test, and prove wrangler runs at all.
+      #
+      # test/worker.http.test.mjs spawns `npx --yes wrangler dev` and gives it 90 seconds to answer
+      # a fetch. On a cold runner that budget also has to cover npm resolving and downloading the
+      # whole wrangler tree -- so a slow registry does not read as "wrangler is slow", it reads as
+      # the suite hanging, and the test pipes wrangler's stdout and stderr to nothing, so the job
+      # log stays empty while it does. Doing the download here means the 90 seconds is spent on
+      # what it was budgeted for, and a failure at this step names itself.
+      - name: Warm the wrangler download
+        run: npx --yes --ignore-scripts "wrangler@${WRANGLER_VERSION}" --version
 
       - run: npm test
 
@@ -92,9 +107,20 @@ jobs:
     #
     # The ref test is what stops a `workflow_dispatch` on a feature branch from shipping to
     # today.calvin.sg.
+    #
+    # The third clause is a CONFIGURATION GATE, not a guard. Creating the Cloudflare token needs an
+    # interactive dashboard login, so there is a window where this workflow exists and the
+    # credential does not. Failing through that window would paint `main` red for a reason that is
+    # not a defect -- and a permanently red badge is one nobody reads by the second week.
+    #
+    # Skipping instead does NOT reopen the merged-but-not-shipped gap, because that gap already has
+    # its own alarm: .github/workflows/drift.yml compares the live page to this tree weekly and
+    # opens an issue. The `deploy-unconfigured` job below says so out loud on every run until the
+    # variable exists, so the skip is never silent.
     if: >-
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
       && github.ref == 'refs/heads/main'
+      && vars.CLOUDFLARE_ACCOUNT_ID != ''
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -166,3 +192,29 @@ jobs:
           done
           echo "::error::The edge is not serving this commit. Deploy reported success; propagation or the route did not."
           exit 1
+
+  # Says out loud that `main` is merged but not shipped, for as long as that is true. Deliberately
+  # does NOT fail: an unconfigured deploy is not a broken one, and that distinction is the whole
+  # reason the job above skips rather than errors. `.scratchpad/cloudflare-deploy-token.md` is the
+  # runbook; drift.yml is the alarm if a real divergence appears in the meantime.
+  deploy-unconfigured:
+    name: deploy (not configured)
+    needs: [test]
+    if: >-
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+      && github.ref == 'refs/heads/main'
+      && vars.CLOUDFLARE_ACCOUNT_ID == ''
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report that nothing was deployed
+        run: |
+          echo "::warning title=Not deployed::CLOUDFLARE_ACCOUNT_ID is unset, so the deploy job was skipped. main is merged but NOT shipped."
+          {
+            echo "### Not deployed"
+            echo ""
+            echo "\`CLOUDFLARE_ACCOUNT_ID\` (repository variable) and \`CLOUDFLARE_API_TOKEN\`"
+            echo "(\`production\` environment secret) are not both set, so the \`deploy\` job did not run."
+            echo ""
+            echo "\`main\` is merged but **not shipped** -- \`npm run deploy\` from a laptop is still"
+            echo "the only thing putting this commit on the edge."
+          } >> "$GITHUB_STEP_SUMMARY"
