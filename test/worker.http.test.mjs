@@ -257,6 +257,45 @@ test("a theme swap snaps rather than ramping the chips across the old palette", 
     "and must force a reflow between setting and clearing it, or nothing is suppressed");
 });
 
+// 🔴 THE REGRESSION CONTROL FOR A BUG THAT SHIPPED. Telegram's back arrow rendered on an iPhone
+// and pressing it did nothing: the outbound `web_app_setup_back_button` was correct, and the page
+// never received `back_button_pressed`. Telegram delivers an event by CALLING a function on the
+// page BY NAME, and the name differs per client — so installing one of the three is installing
+// none of them for two clients out of three.
+test("a back-button press can reach the app on every client that sends one", async () => {
+  const res = await fetch(`${BASE}/`);
+  const body = await res.text();
+
+  for (const path of [
+    "window.Telegram.WebView",              // iOS and Android
+    "window.TelegramGameProxy",             // Desktop
+    "TelegramGameProxy_receiveEvent",       // Windows Phone
+  ]) {
+    assert.match(body, new RegExp(path.replace(/[.$]/g, "\\$&")),
+      `the receiver must be installed at ${path}, or that client's arrow is inert`);
+  }
+
+  // AND NEVER BEHIND A "DO NOT CLOBBER" GUARD, which is the exact shape of the shipped bug: the
+  // client puts its own object at that path before this script runs, so a check for an existing
+  // handler skips our own assignment entirely and the arrow goes dead.
+  assert.doesNotMatch(body, /if\s*\(\s*!\s*window\.Telegram\.WebView\.receiveEvent\s*\)/,
+    "installing the receiver conditionally is how it was silently skipped on iOS");
+  assert.match(body, /installReceiver/, "the receiver must chain what was there, not defer to it");
+});
+
+// The week is long and a reader who opens it must be able to leave it, whatever the client does
+// with the header. This was version-gated once, and on the one device it mattered the gate was
+// open, the arrow was dead, and the screen was a dead end.
+test("the week screen always draws its own way back, and a spent day opens", async () => {
+  const res = await fetch(`${BASE}/`);
+  const body = await res.text();
+  assert.match(body, /navChip\("Today"/, "there must be an in-page way back to Today");
+  assert.match(body, /el\("details"\)/, "a spent day is a disclosure the reader can open");
+  assert.match(body, /el\("summary"\)/);
+  // The disclosure mark is the closed set's own arrow, turned -- never a chevron from elsewhere.
+  assert.match(body, /details\[open\] > summary \.disc\{transform:rotate\(90deg\)\}/);
+});
+
 test("GET /s is refused -- the app is not reachable without a POSTed launch", async () => {
   await assertDenied(await fetch(`${BASE}/s`), "GET /s");
 });
