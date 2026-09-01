@@ -21,11 +21,19 @@ changes what I actually do.
 
 ## Overview
 
+Two screens. **Today** opens first and answers the 6am question; **The week** is one tap away and
+carries the rest of the plan, so I no longer open the artifact to see what Thursday looks like.
+
 | | What it shows |
 | --- | --- |
 | **Now** | The session I am in, or the next one I have to leave for. `Leave by` where the plan states one, the start time where it does not, and `Until` while a session is under way. Place, travel time, the one rule for the session, and what to bring |
 | **Next** | The one after it, so I can see whether tonight commits me to a 6am tomorrow |
 | **Neither** | An honest line. A rest day says so; a plan that does not cover today says *that*, separately from a plan that is merely old |
+| **The week** | All seven days: the volume against its ceiling, each day's character and bedtime, and every session with its times, place, figures, the rule decided before the start, and why it exists. Days already spent collapse to one line — what a finished day settled is what the weekly artifact is for |
+
+Getting back is Telegram's own back arrow. The page reads `tgWebAppVersion` out of the launch to
+know whether the client can draw one (Bot API 6.1+), and only draws its own `Today` control when it
+cannot — so a current client gets one way back rather than two.
 
 The session in front of me **stays** in front of me while it is under way — until the plan's own
 `until`, or a bounded grace where it states none, and never past the moment the next session claims
@@ -95,9 +103,10 @@ values seeded into the store rather than against a guess at what the real conten
 
 A [Cloudflare Worker](https://developers.cloudflare.com/workers/) with a
 [Workers KV](https://developers.cloudflare.com/kv/) namespace, five source files, and **zero
-dependencies** — no framework, no bundler, no lockfile. Even `telegram-web-app.js` is avoided: the
-two things it is needed for are one `postEvent` each over the documented bridge, about 25 lines
-inline, and if the bridge is missing the page still renders.
+dependencies** — no framework, no bundler, no lockfile. Even `telegram-web-app.js` is avoided: what
+it is needed for is three `postEvent` calls over the documented bridge plus a listener for the back
+button coming the other way, and if the bridge is missing the page still renders — it just draws
+its own way back instead.
 
 `node --test` is the change gate. The hostname resolves through a proxied `AAAA` record in
 [`calvindotsg/portfolio-v2`](https://github.com/calvindotsg/portfolio-v2)'s octoDNS zone, added by
@@ -119,7 +128,7 @@ own `initData` against it, so every auth path is exercised without a real creden
 
 | Command | What it does |
 | --- | --- |
-| `npm test` | The whole suite, 47 tests |
+| `npm test` | The whole suite, 61 tests |
 | `npm run test:auth` | Just the HTTP auth suite, against the real Worker in the real runtime |
 | `npm run dev` | `wrangler dev` on an emulated KV |
 | `npm run deploy` | Ships to `today.calvin.sg` — CI also does this on merge |
@@ -172,21 +181,32 @@ it is pushed and useless by Wednesday.
 ## Testing
 
 ```sh
-npm test          # 47 tests
+npm test          # 61 tests
 ```
 
 - `test/initdata.test.mjs` — the signature algorithm, against `initData` minted the way **Telegram**
   mints it rather than by the checker's own code. That is not a stylistic choice: an earlier version
   folded `signature` into the data-check string, which broke every launch from a real client while
   every hand-minted fixture still passed.
-- `test/view.test.mjs` — five negative controls: every optional field absent, a day with nothing
-  actionable left, data past the staleness threshold, an empty `days` array, and a session's hold
-  on the screen running past the next thing I have to leave for. Without these the app would pass
-  its tests while showing stale or empty data as though it were today's.
+- `test/view.test.mjs` — negative controls, which are most of the file. The original five: every
+  optional field absent, a day with nothing actionable left, data past the staleness threshold, an
+  empty `days` array, and a session's hold on the screen running past the next thing I have to
+  leave for. The week screen added more, and two are worth naming — **the past/today/ahead boundary
+  at 00:05 Singapore time**, which a UTC comparison gets wrong every morning for eight hours, and
+  **an unknown key inside `bed`**, which the allowlist has to drop even though `pick` does not
+  recurse. Each was checked by breaking the code it guards and watching it fail.
+- `test/publish.test.mjs` — the publisher's two content gates, by running the publisher.
 - `test/worker.http.test.mjs` — the real Worker in the real runtime, over HTTP.
 
+One control was deliberately **not** written: *"every status prints its own word."* Nothing in the
+suite renders the DOM, so at view level it could only assert `status` passed through unchanged —
+and would have passed even if the week screen printed no status word at all. The mapping moved into
+`src/view.js` instead, where a test can actually fail.
+
 CI runs the suite on Node 22, 24 and 26, then deploys `main` and asserts the edge is serving that
-exact commit. `.github/workflows/drift.yml` re-checks that weekly, because `scripts/publish.mjs`
+exact commit. ⚠️ **The `production` environment requires a review**, so a merge does not ship on its
+own — it waits for an approval, and until that click `main` is merged and the edge is still serving
+the previous commit. `.github/workflows/drift.yml` re-checks weekly, because `scripts/publish.mjs`
 writes KV directly and the page and the data ship on two independent tracks.
 
 ## Files
