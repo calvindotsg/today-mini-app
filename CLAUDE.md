@@ -10,10 +10,10 @@ cost a session.
 
 | Task | Command |
 |---|---|
-| Test | `npm test` (61 tests) |
+| Test | `npm test` (67 tests) |
 | Auth suite only | `npm run test:auth` |
 | Dev server | `npm run dev` |
-| Deploy | `npm run deploy` — CI also does this on merge to `main` |
+| Deploy | `npm run deploy` — CI also does this on merge to `main`, **behind an approval** (trap 2) |
 | Publish a week | `node scripts/publish.mjs <week.html> --put` |
 
 ## Architecture
@@ -36,10 +36,16 @@ a Claude session ──► scripts/publish.mjs ──► Cloudflare KV ──►
 | `CONTRACT.md` | The `week-state` shape, **measured** rather than specified. Read before changing `reduce.js`. |
 
 **Two screens, one document.** `Today` answers the 6am question and is what the app opens on; `The
-week` carries all seven days and is reached by a chip, returned from by Telegram's own back arrow.
-There is no second request and no route for the second screen — the whole week already crosses the
-auth boundary in the one `POST /s` response, so there is nothing extra to get the access control
-right on.
+week` carries all seven days and is reached by a chip. There is no second request and no route for
+the second screen — the whole week already crosses the auth boundary in the one `POST /s` response,
+so there is nothing extra to get the access control right on.
+
+🔴 **The way back is drawn TWICE on purpose** — Telegram's arrow, plus a `Today` chip at the top of
+the week and again at its foot. That looks like the redundancy the design system tells you to cut,
+and it is not. The in-page control was once gated on the client being unable to draw an arrow; on a
+real iPhone that gate was open, the arrow rendered and was inert, and the week had no exit. See the
+comment above `installReceiver` in `src/app.html` for why the arrow was dead. **A way back does not
+get to depend on a bridge.**
 
 Two routes and nothing else: `GET /` serves the document; `POST /s` returns the week as JSON to a
 validated launch and `401` with a **zero-byte body** to everyone else. Any other path is `404`.
@@ -60,7 +66,9 @@ waiting for a click, and until that click `main` is merged and the edge serves t
 
 ⚠️ **The alarm for that is now dead code.** `deploy (not configured)` — the job that printed *"main
 is merged but NOT shipped"* — fires only when `CLOUDFLARE_ACCOUNT_ID == ''`, which can never be true
-again. Nothing announces an unapproved deployment except `drift.yml`, weekly. So after merging,
+again. What does announce it is `drift.yml`, which runs on **every push to `main`** as well as
+weekly — measured twice on 2026-09-01, it opened an issue within ten seconds of the merge both
+times, and closes it again once the edge catches up. So after merging,
 **check the job actually ran**:
 
 ```sh

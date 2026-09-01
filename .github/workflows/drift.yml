@@ -103,6 +103,47 @@ jobs:
                             --label deploy-drift --body "$body"
           fi
 
+      # 🔴 AN ALARM THAT CANNOT BE QUIET IS ONE NOBODY READS, and until this step existed every
+      # issue this workflow opened had to be closed by hand. Both steps above are gated on
+      # `drifted == 'true'`, so a green run said nothing and changed nothing -- the issue from the
+      # last real drift stayed open after the drift was fixed, indefinitely. Measured twice on
+      # 2026-09-01: #10 and #12 were both opened correctly, both resolved within minutes, and both
+      # were still open afterwards.
+      #
+      # Selected by LABEL, exactly as the open path is, and for the same reason -- see the comment
+      # there. The consequence worth stating out loud: a human-opened issue carrying this label
+      # will also be closed by a green run. That is correct rather than merely tolerable, because
+      # the label means precisely "the edge is not serving main", and this run has just proved it
+      # is. The label cannot be applied without write access, so it cannot be squatted into a
+      # denial of service against someone else's thread.
+      #
+      # A no-op when nothing is open, which is the overwhelming majority of runs.
+      - name: Close the drift issue once the edge agrees again
+        if: steps.compare.outputs.drifted == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          WANT: ${{ steps.compare.outputs.want }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          existing=$(gh issue list --state open --label deploy-drift --limit 1 --json number --jq '.[0].number // empty')
+          if [ -z "$existing" ]; then
+            echo "No open drift issue to close." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          body=$(printf '%s\n' \
+            "Resolved. The edge is serving \`main\` again." \
+            "" \
+            "| | sha256 |" \
+            "|---|---|" \
+            "| this tree, and live | \`${WANT}\` |" \
+            "" \
+            "Closed automatically by the run that measured it." \
+            "" \
+            "[Run log](${RUN_URL})")
+          gh issue comment "$existing" --body "$body"
+          gh issue close "$existing" --reason completed
+          echo "closed #${existing}" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Fail the run so the drift is visible on the Actions tab too
         if: steps.compare.outputs.drifted == 'true'
         run: exit 1

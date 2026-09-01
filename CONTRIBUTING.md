@@ -26,7 +26,7 @@ exercise every auth path.
 
 | Command | What it does |
 | --- | --- |
-| `npm test` | The whole suite, 47 tests |
+| `npm test` | The whole suite, 67 tests |
 | `npm run test:auth` | Just the HTTP auth suite, against the real Worker in the real runtime |
 | `npm run dev` | `wrangler dev` on the emulated KV |
 | `npm run deploy` | Ships to `today.calvin.sg`. CI does this on merge — see below |
@@ -70,13 +70,28 @@ Plan**, and in the test plan:
   checked. The one that stays open here is a **real Telegram client** — it needs a phone and the
   real bot token.
 
+  ⚠️ **That box is not a formality, and #9 proved it.** It shipped with exactly that line open, and
+  the phone then found two defects a browser could not: Telegram's back arrow rendered and did
+  nothing, and the in-page fallback was gated on the arrow working. Both were invisible to 65
+  passing tests and to a browser check at four viewport widths. When the open box is the one your
+  change actually depends on, say so in those words rather than leaving it as boilerplate.
+
 ## Two things that are easy to get wrong
 
-**Merging is not shipping — but it is now closer than it was.** CI deploys `main` to
-`today.calvin.sg` after the tests pass, and asserts the edge is actually serving that commit.
+**Merging is not shipping, and the gap has moved rather than closed.** CI deploys `main` to
+`today.calvin.sg` after the tests pass and asserts the edge is actually serving that commit — but
+🔴 **the `production` environment requires a review**, so a merge parks at *Waiting* until someone
+clicks. Until then `main` is merged and the edge serves the previous commit. Finishing a PR here
+means watching `deploy production` reach `success`, not watching the merge land:
+
+```sh
+gh run list --limit 3
+gh run view <id> --json jobs --jq '.jobs[] | "\(.name)\t\(.conclusion)"'
+```
+
 `scripts/publish.mjs` still writes the week to KV *directly*, from a laptop, so the page and the
 data ship on two independent tracks and either can be stale while the other is current.
-`.github/workflows/drift.yml` watches for exactly that.
+`.github/workflows/drift.yml` watches for exactly that, on every push to `main` and weekly.
 
 **A stranger's `initData` is cryptographically valid.** Telegram signs every launch with the same
 bot token, so the signature only proves the launch is real — a `user.id` comparison is what decides
