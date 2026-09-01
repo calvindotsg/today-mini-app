@@ -155,6 +155,13 @@ dd{margin:0; font-size:.9375rem; overflow-wrap:anywhere}
 footer{margin-top:1.5rem; color:var(--quieter); font-size:.6875rem}
 
 :focus-visible{outline:2px solid var(--accent); outline-offset:2px; border-radius:2px}
+/* THE SCREEN CONTAINER IS NOT A CONTROL. Swapping screens moves focus here so a reader driving the
+   page by keyboard or screen reader lands at the top of what just replaced the page, rather than
+   wherever the old markup left them -- but `#root` is tabindex="-1", is not in the tab order, and
+   is never focused by a person. The ring is a control's affordance, and drawn around the whole
+   viewport it reads as an error state. The focus MOVE is the accessible behaviour; the ring is not
+   part of it. */
+#root:focus,#root:focus-visible{outline:none}
 
 /* ── the theme control ─────────────────────────────────────────────────────────────────────
    THE SITE'S `chip` AND `chip-icon`, WRITTEN OUT. The classes do not travel -- this page loads
@@ -178,13 +185,23 @@ footer{margin-top:1.5rem; color:var(--quieter); font-size:.6875rem}
 }
 .chrome{margin-top:1.5rem}
 .theme{position:relative; display:flex; flex-wrap:wrap; gap:.5rem; border:0; margin:0; padding:0; min-inline-size:0}
-.theme label{
+/* THE SURFACE IS SHARED; THE STATE MACHINE IS NOT. `.chip` here is the navigation control between
+   the two screens, and it wears the same quiet box as a theme option because the site's vocabulary
+   says both are the same KIND -- chrome: getting somewhere, and setting a preference.
+   What is NOT shared is everything below that depends on `input:checked + label`. A nav chip is a
+   <button> with no adjacent radio, so there is no sibling for those selectors to match, and the
+   ORDER they sit in relative to the press rule is load-bearing for the theme control alone. Adding
+   `.chip` to the base, the hover and the press is the whole of the sharing. */
+.theme label,.chip{
   display:inline-flex; align-items:center; justify-content:center; gap:.4em;
   /* 2.75rem on BOTH axes: the enhanced target size, in rem so it grows with the reader's own
      text rather than pinning a box in pixels the text then outgrows. */
   min-height:2.75rem; min-width:2.75rem; padding:.3rem .7rem;
   border:1px solid var(--hairline); border-radius:2px;
   background:var(--background); color:var(--text); cursor:pointer;
+  /* A <label> inherits the page's face; a <button> does NOT -- it takes the UA's own control font
+     and would arrive a step off the type ramp beside an identical-looking theme chip. */
+  font-family:inherit; appearance:none; -webkit-appearance:none;
   font-size:.75rem; font-weight:700; letter-spacing:.1em; text-transform:uppercase;
   transition:color .3s cubic-bezier(.4,0,.2,1), background-color .3s cubic-bezier(.4,0,.2,1),
              border-color .3s cubic-bezier(.4,0,.2,1);
@@ -197,7 +214,7 @@ footer{margin-top:1.5rem; color:var(--quieter); font-size:.6875rem}
    tapped -- which would leave the last option pressed wearing the accent beside the one that is
    genuinely current, faking the exact distinction this row exists to draw. */
 @media (hover: hover){
-  .theme label:hover{border-color:var(--accent); color:var(--accent)}
+  .theme label:hover,.chip:hover{border-color:var(--accent); color:var(--accent)}
 }
 /* The current option, in the site's own inverted treatment. */
 .theme input:checked + label{background:var(--text); border-color:var(--text); color:var(--background)}
@@ -205,7 +222,7 @@ footer{margin-top:1.5rem; color:var(--quieter); font-size:.6875rem}
    over in about 100ms against a 300ms ramp, so an eased press is drawn about a third of the way
    and then undrawn. Below the checked rule on purpose, so the option you are already on also
    answers the finger. */
-.theme label:active{border-color:var(--accent); color:var(--accent); transition:none}
+.theme label:active,.chip:active{border-color:var(--accent); color:var(--accent); transition:none}
 /* ...and the option you are already on keeps its readable ink, because accent on the --text
    flood measures 2.77:1 light and 1.37:1 dark. The accent border still says the tap landed. */
 .theme input:checked + label:active{color:var(--background); transition:none}
@@ -219,7 +236,7 @@ footer{margin-top:1.5rem; color:var(--quieter); font-size:.6875rem}
    #111111 on the NEW palette's #fafafa ground. That is an acknowledgement of the press fading
    in after the press, which is the one thing this design says a press must never do. Set for
    exactly one forced reflow by the script below, so hover and press keep their ramp. */
-:root[data-swapping] .theme label{transition:none}
+:root[data-swapping] .theme label,:root[data-swapping] .chip{transition:none}
 /* A forced-colours mode replaces every author colour, so the inverted fill -- the only thing
    saying which option is current -- would arrive blank. The marks need nothing: they are inline
    SVG filled with currentColor, not a mask over a background the mode overrides. */
@@ -228,6 +245,113 @@ footer{margin-top:1.5rem; color:var(--quieter); font-size:.6875rem}
     forced-color-adjust:none; background:Highlight; border-color:CanvasText; color:HighlightText;
   }
 }
+
+/* ── the week screen ───────────────────────────────────────────────────────────────────────
+   The second screen, and everything below is only ever on it. It is a LIST, where the Now screen
+   is a single card: the reader is scanning seven days rather than reading one number, so nothing
+   here is allowed to compete with `.clock` for weight -- the two screens share a palette and a
+   type ramp, not a hierarchy. */
+.nav{margin:1.25rem 0 0 0; display:flex; gap:.5rem}
+/* The week screen's own name. It is an `h1` -- one per screen -- so the ramp above already sets
+   it; the ONLY thing that differs is the space beneath, because the Kiprun line belongs to this
+   heading rather than to the gauge. Restating the ramp here would be a second copy of a size that
+   is already decided, and this rule was briefly written as `h2.weekhead`, which matched nothing. */
+.weekhead{margin:0 0 .25rem 0}
+.race{color:var(--quiet); font-size:.8125rem; margin:0 0 1.25rem 0}
+
+/* THE GAUGE. The design system's rule for a quantity: a flat two-pixel stroke, the marked region
+   over the remainder, and the scale named IN WORDS BEFORE the bar -- a length means nothing until
+   the reader knows what it is measured against. The number is printed as well as drawn, because a
+   bar is a shape and the reader who cannot resolve the shape is the one who most needs the value.
+   No ink goes inside the bar: the fill flips polarity between the themes. */
+.gauge{margin:0 0 1.5rem 0}
+.gauge .scale{display:block; margin-bottom:.5rem; font-size:.9375rem}
+.gauge .scale b{font-weight:600; font-variant-numeric:tabular-nums}
+.gauge .bar{display:block; height:2px; background:var(--progress-track); overflow:hidden}
+.gauge .bar i{display:block; height:2px; background:var(--progress-fill)}
+.gauge .step{color:var(--quiet); font-size:.8125rem; margin:.5rem 0 0 0}
+/* A quantity nobody published is drawn as an ABSENCE and named, never as a zero-length bar --
+   a measured zero and an unmeasured value are different facts and only the undrawn one can say so. */
+.gauge .absent{color:var(--quieter); font-size:.8125rem; margin:.5rem 0 0 0}
+
+.day{padding:1rem 0 0 0; border-top:1px solid var(--card-border)}
+.day:first-of-type{border-top:0; padding-top:0}
+.dhead{display:flex; flex-wrap:wrap; gap:.375rem .625rem; align-items:baseline;
+       margin:0 0 .625rem 0; font-size:.9375rem; font-weight:600}
+.dhead .d{white-space:nowrap}
+/* The day's one-word character, in the same hairline bib the Now card's `bring` list wears. */
+.tag{border:1px solid var(--hairline); border-radius:2px; padding:.05rem .4rem;
+     font-size:.6875rem; font-weight:700; letter-spacing:.08em; text-transform:uppercase;
+     color:var(--quiet)}
+/* Today is marked by a DOT AND A WORD. The dot alone would be information carried in colour, which
+   a forced-colours mode replaces, and in a shape a reader may not read as current. */
+.dhead .today{color:var(--status-live); display:inline-flex; align-items:center; gap:.3em;
+              font-size:.6875rem; font-weight:700; letter-spacing:.14em; text-transform:uppercase}
+.dhead .today::before{content:""; width:.5rem; height:.5rem; border-radius:50%;
+                      background:var(--status-live); flex:none}
+
+.slots{margin:0; padding:0; list-style:none; display:grid; gap:.875rem}
+.slot{display:grid; grid-template-columns:3.4rem 1fr; gap:.125rem .625rem}
+.slot .t{color:var(--accent); font-variant-numeric:tabular-nums; font-size:.875rem; white-space:nowrap}
+/* The end time sits UNDER the start rather than beside it, so the column stays narrow enough to
+   leave a readable measure for the session at 320px -- which is the width this page is written to. */
+.slot .t .to{display:block; color:var(--quieter); font-size:.75rem}
+/* An untimed session is a NOTE attached to the day -- a kit list, a fuel plan, a rest by design --
+   not an appointment. It keeps the column so the titles stay aligned, and says so rather than
+   showing a blank where a clock would be. */
+.slot .t--none{color:var(--quieter)}
+/* `min-width:0` because a grid item refuses to shrink below its longest word by default, and a
+   venue or a session name from upstream is not a string this page gets to choose the length of.
+   Same defence `dd` already carries on the Now screen, for the same reason. */
+.sbody{min-width:0; display:grid; gap:.25rem; align-content:start}
+/* INLINE, NOT FLEX. As a flex row the mark is its own item, so at 320px it wraps onto a line of
+   its own and the reader gets a bicycle floating above the session it belongs to -- a mark paired
+   with nothing, which is the one thing the design system says a mark must never be. Inline, it
+   flows with the words and breaks only where text breaks. */
+.slot .what{margin:0; font-size:.9375rem; min-width:0; overflow-wrap:anywhere}
+.slot .leave{color:var(--quiet); font-size:.8125rem; font-variant-numeric:tabular-nums; margin:0}
+.slot .where{color:var(--quieter); font-size:.8125rem; overflow-wrap:anywhere; margin:0}
+
+/* The session's own figures. Value and label are two different things and are set apart, because
+   "18 km" without "distance" beside it is a number looking for a question. */
+.figs{margin:.125rem 0 0 0; padding:0; list-style:none; display:flex; flex-wrap:wrap; gap:.25rem .75rem}
+.figs li{font-size:.8125rem}
+.figs .v{font-variant-numeric:tabular-nums; font-weight:600}
+.figs .l{color:var(--quieter); margin-left:.35em}
+
+/* THE ONE RULE, and it is the reason this screen can replace most of the weekly page. It is the
+   decision made BEFORE the session, in the artifact's own words -- "if rep 2 comes in slower than
+   5:40/km, rep 3 is run at 6:00/km" -- and it is already in the payload. It gets the hairline the
+   Now card gives it, because on the day it is the only line that changes what happens. */
+.srule{margin:.25rem 0 0 0; padding-top:.375rem; border-top:1px solid var(--hairline);
+       font-size:.875rem; line-height:1.45}
+.swhy{margin:0; color:var(--quiet); font-size:.8125rem; line-height:1.5}
+/* Four states share ONE dim treatment and are told apart by the WORD, which is the only carrier
+   that survives a forced-colours mode. `planned` prints nothing: it is the default, and labelling
+   it would put a word on every row of a week that is almost entirely planned. */
+.slot .status{font-size:.6875rem; font-weight:700; letter-spacing:.1em; text-transform:uppercase;
+              color:var(--quieter); white-space:nowrap; margin-left:.45em}
+.slot--closed .what,.slot--closed .t{color:var(--quieter)}
+.sport{width:1em; height:1em; display:inline-block; vertical-align:-.125em; margin-right:.35em}
+.sport--run{color:var(--sport-run)}
+.sport--ride{color:var(--sport-ride)}
+/* A closed session's mark and label recede WITH its row. Both the sport tokens and `.kind` set
+   `color` outright, so without this the most saturated things on a dim row belong to the session
+   that did NOT happen -- emphasis on exactly the wrong line. Below the rules they override. */
+.slot--closed .sport,.slot--closed .kind{color:var(--quieter)}
+
+/* The night that closes the day. It is not a session -- it is what the plan asks of the hours
+   after the last one -- so it sits below them and is set quieter than they are. */
+.bed{margin:.625rem 0 0 0; color:var(--quiet); font-size:.8125rem; line-height:1.5}
+.bed .mc{color:var(--quieter); margin-right:.4em}
+.bed .plan{font-variant-numeric:tabular-nums; color:var(--text)}
+
+/* A day already spent, collapsed to one line. There is no expander: the mark set ships no chevron,
+   an expander would need a 2.75rem target on every one of them, and what a finished day actually
+   settled is what the weekly artifact is for. */
+.day--past{padding-bottom:0}
+.pastline{margin:0 0 1rem 0; color:var(--quieter); font-size:.8125rem}
+.pastline .d{font-weight:600}
 
 @media (prefers-reduced-motion: reduce){
   *,*::before,*::after{animation-duration:.01ms !important; animation-iteration-count:1 !important;
@@ -367,19 +491,87 @@ footer{margin-top:1.5rem; color:var(--quieter); font-size:.6875rem}
   var view = null;
   var root = document.getElementById("root");
 
+  // Whether TELEGRAM can draw the way back. Two conditions, and both are needed: the client has to
+  // be on Bot API 6.1+ for the back button to exist at all, and there has to be a bridge to ask.
+  // Assigned once at boot, from the launch parameters. When it is false the week screen draws its
+  // own `Today` chip instead -- so the fallback is conditional rather than a permanent duplicate
+  // of a control the header already offers.
+  var backSupported = false;
+
+  function setBackButton(visible) {
+    if (!backSupported) return;
+    postEvent("web_app_setup_back_button", { is_visible: !!visible });
+  }
+
   // Telegram puts the launch parameters in the URL FRAGMENT, which is never sent to a server --
   // so nothing can be proven about the first GET, and this is the request that proves it. The
   // query string is checked too because a direct link can deliver them there on some clients.
+  // ALSO READS THE VERSION, which is the one fact that decides whether this page draws its own
+  // way back. Telegram puts `tgWebAppVersion` in the same fragment as the credential, so the
+  // client's Bot API level is already in hand and costs no round trip and no feature-detection
+  // guess -- and the back button it gates on needs 6.1.
   function launchParams() {
     var sources = [location.hash.replace(/^#/, ""), location.search.replace(/^\?/, "")];
     for (var i = 0; i < sources.length; i++) {
       try {
-        var v = new URLSearchParams(sources[i]).get("tgWebAppData");
-        if (v) return v;
+        var p = new URLSearchParams(sources[i]);
+        var v = p.get("tgWebAppData");
+        if (v) return { data: v, version: p.get("tgWebAppVersion") || "" };
       } catch (e) { /* fall through */ }
     }
-    return "";
+    return { data: "", version: "" };
   }
+
+  function atLeast(version, major, minor) {
+    var m = /^(\d+)\.(\d+)/.exec(version || "");
+    if (!m) return false;
+    var a = Number(m[1]), b = Number(m[2]);
+    return a > major || (a === major && b >= minor);
+  }
+
+  // Is there anything on the other end of postEvent at all? A plain browser has none of the three
+  // transports, and there the page must draw its own way back or the reader is stranded.
+  function hasBridge() {
+    try {
+      if (window.TelegramWebviewProxy && window.TelegramWebviewProxy.postEvent) return true;
+      if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.performAction) return true;
+      if (window.parent !== window) return true;
+    } catch (e) { /* fall through */ }
+    return false;
+  }
+
+  // ── THE RECEIVE HALF OF THE BRIDGE ────────────────────────────────────────────────────────
+  // Sending is one postMessage; being TOLD the arrow was pressed needs a listener, and the two
+  // transports have different shapes. Still no telegram-web-app.js: this is the whole of what it
+  // would have been loaded for.
+  var onBackPressed = null;
+  function handleTelegramEvent(type) {
+    if (type === "back_button_pressed" && onBackPressed) onBackPressed();
+  }
+
+  // The native clients call a function on us BY NAME, so it has to exist before the first press.
+  try {
+    window.Telegram = window.Telegram || {};
+    window.Telegram.WebView = window.Telegram.WebView || {};
+    if (!window.Telegram.WebView.receiveEvent) {
+      window.Telegram.WebView.receiveEvent = function (type) { handleTelegramEvent(type); };
+    }
+  } catch (e) { /* fail open, as every cosmetic path here does */ }
+
+  // The web client posts into the frame instead.
+  window.addEventListener("message", function (e) {
+    // `frame-ancestors` in the CSP says who may FRAME this page. It says NOTHING about who may
+    // postMessage into it -- a window opened rather than framed has no frame-ancestors protection
+    // at all -- so the origin is checked here, and the source pinned to the parent that framed us.
+    // A spoofed event could only flip a client-side screen: it issues no fetch and exposes no
+    // data. The check is here because it is two lines, not because the impact is large.
+    if (e.origin !== "https://web.telegram.org") return;
+    if (e.source !== window.parent) return;
+    var msg;
+    try { msg = JSON.parse(e.data); } catch (err) { return; }
+    if (!msg || typeof msg.eventType !== "string") return;
+    handleTelegramEvent(msg.eventType);
+  });
 
   function el(tag, cls, text) {
     var n = document.createElement(tag);
@@ -493,15 +685,7 @@ footer{margin-top:1.5rem; color:var(--quieter); font-size:.6875rem}
     return c;
   }
 
-  function render(v) {
-    view = v;
-    root.textContent = "";
-
-    if (!view.ok) {
-      add(root, banner("Cannot show the plan", view.error || "Something is wrong with the published plan."));
-      return;
-    }
-
+  function renderToday() {
     add(root, renderHeader());
 
     // Two different kinds of out-of-date, reported separately. A plan pushed an hour ago for last
@@ -534,10 +718,299 @@ footer{margin-top:1.5rem; color:var(--quieter); font-size:.6875rem}
           : "Nothing is still to come in the next three days. Everything in that window is done, missed, or a rest by design."));
     }
 
+    // The way in to the second screen. A CHIP and not a plated control: the design system spends
+    // the offset plate on a page's ONE action, and getting somewhere is chrome. It sits after the
+    // plan for the same reason the theme control sits at the foot -- at 6am the number is what the
+    // eye and the keyboard should meet first.
+    if (hasWeek()) {
+      var nav = el("div", "nav");
+      add(nav, navChip("The week", function () { show("week"); }));
+      add(root, nav);
+    }
+
     var f = el("footer", null, view.plannedKm
       ? view.weekLabel + " · " + view.plannedKm + " km planned" + (view.ceilingKm ? " of a " + view.ceilingKm + " km ceiling" : "")
       : view.weekLabel);
     add(root, f);
+  }
+
+  // ── the week screen ───────────────────────────────────────────────────────────────────────
+
+  function hasWeek() {
+    return Boolean(view && view.ok && view.week && view.week.days && view.week.days.length);
+  }
+
+  function navChip(label, onClick) {
+    var b = el("button", "chip", label);
+    b.type = "button";
+    b.addEventListener("click", onClick);
+    return b;
+  }
+
+  /** One decimal, and no trailing ".0" -- 44.23 is 44.2 km and 18 is 18 km, never 18.0. */
+  function fmtKm(n) {
+    return String(Math.round(n * 10) / 10);
+  }
+
+  // Two of the twenty marks calvin.sg ships, copied from the same Remix Icon set at the same
+  // 24x24 grid as the sun and moon above. The set is CLOSED: anything not in it is drawn as a
+  // word, never as an emoji and never from a second icon family.
+  var SPORT_PATHS = {
+    run: "M9.83 8.79L8 9.456V13H6V8.05h.015l5.268-1.918c.244-.093.51-.14.782-.131a2.62 2.62 0 0 1 2.427 1.82q.279.875.51 1.181A5 5 0 0 0 19 11v2a6.99 6.99 0 0 1-5.402-2.547l-.697 3.956L15 16.17V23h-2v-5.898l-2.27-1.904l-.727 4.127l-6.894-1.215l.348-1.97l4.924.868zM13.5 5.5a2 2 0 1 1 0-4a2 2 0 0 1 0 4",
+    ride: "M5.5 21a4.5 4.5 0 1 1 0-9a4.5 4.5 0 0 1 0 9m0-2a2.5 2.5 0 1 0 0-5a2.5 2.5 0 0 0 0 5m13 2a4.5 4.5 0 1 1 0-9a4.5 4.5 0 0 1 0 9m0-2a2.5 2.5 0 1 0 0-5a2.5 2.5 0 0 0 0 5m-7.477-8.695L13 12v6h-2v-5l-2.719-2.266A2 2 0 0 1 8 7.671l2.828-2.828a2 2 0 0 1 2.829 0l1.414 1.414a6.97 6.97 0 0 0 3.917 1.975l-.01 2.015a8.96 8.96 0 0 1-5.321-2.575zM16 5a2 2 0 1 1 0-4a2 2 0 0 1 0 4",
+  };
+
+  function sportMark(sport) {
+    var NS = "http://www.w3.org/2000/svg";
+    var frag = document.createDocumentFragment();
+    var svg = document.createElementNS(NS, "svg");
+    svg.setAttribute("class", "sport sport--" + sport);
+    svg.setAttribute("viewBox", "0 0 24 24");
+    // Hidden from the tree with the word beside it, which is this page's existing idiom for a
+    // mark -- the same shape the theme control's sun and moon already use.
+    svg.setAttribute("aria-hidden", "true");
+    svg.setAttribute("focusable", "false");
+    var path = document.createElementNS(NS, "path");
+    path.setAttribute("fill", "currentColor");
+    path.setAttribute("d", SPORT_PATHS[sport]);
+    svg.appendChild(path);
+    frag.appendChild(svg);
+    frag.appendChild(el("span", "sr-only", sport === "run" ? "Run" : "Ride"));
+    return frag;
+  }
+
+  function renderGauge(v) {
+    var g = el("div", "gauge");
+    var scale = el("p", "scale");
+
+    if (typeof v.plannedKm !== "number") {
+      add(scale, document.createTextNode("This plan does not state a distance for the week."));
+      add(g, scale);
+      return g;
+    }
+
+    // THE SCALE IS NAMED IN WORDS BEFORE THE BAR. A length means nothing until the reader knows
+    // what it is measured against, and a target and a set's largest member are two different
+    // pictures drawn identically.
+    add(scale, el("b", null, fmtKm(v.plannedKm) + " km"));
+    if (typeof v.fraction !== "number") {
+      // Drawn as an ABSENCE and named. A ceiling nobody published and a week at 0% of its ceiling
+      // are different facts, and only the undrawn bar can tell them apart.
+      scale.appendChild(document.createTextNode(" planned."));
+      add(g, scale);
+      add(g, el("p", "absent", "No ceiling is published for this week, so there is nothing to measure it against."));
+      return g;
+    }
+    scale.appendChild(document.createTextNode(" planned, of a "));
+    add(scale, el("b", null, fmtKm(v.ceilingKm) + " km"));
+    scale.appendChild(document.createTextNode(" ceiling."));
+    add(g, scale);
+
+    var bar = el("span", "bar");
+    var fill = el("i");
+    // CSSOM, not a style attribute: the CSP carries a nonce and no 'unsafe-inline', which forbids
+    // a parsed style="" but does not reach a property set through the object model.
+    fill.style.width = Math.max(0, Math.min(1, v.fraction)) * 100 + "%";
+    add(bar, fill);
+    add(g, bar);
+
+    // The number is printed as well as drawn. A bar is a shape, and the reader who cannot resolve
+    // the shape is the reader who most needs the value.
+    var pct = Math.round(v.fraction * 1000) / 10;
+    var step = el("p", "step");
+    step.appendChild(document.createTextNode(
+      pct + "% of the ceiling" + (v.fraction > 1 ? " — over it." : ".")));
+    if (typeof v.stepPct === "number") {
+      var d = Math.round(v.stepPct * 10) / 10;
+      step.appendChild(document.createTextNode(
+        " " + (d >= 0 ? "Up " : "Down ") + Math.abs(d) + "% on last week's " + fmtKm(v.priorWeekKm) + " km."));
+    }
+    add(g, step);
+    return g;
+  }
+
+  function renderSlot(s) {
+    // `statusWord` is null for a planned session and a word for every other state. It decides both
+    // the dim treatment and what is printed, so the two can never disagree.
+    var li = el("li", "slot" + (s.statusWord ? " slot--closed" : ""));
+
+    var t = hhmm(s.at);
+    var col = el("span", t ? "t" : "t t--none", t || "—");
+    var to = hhmm(s.until);
+    if (t && to) add(col, el("span", "to", "–" + to));
+    add(li, col);
+
+    var body = el("div", "sbody");
+
+    // `kind` IS SHOWN ONLY WHERE THERE IS NO CLOCK, and that is a deliberate exception to carrying
+    // everything. It reads "Run · 19:00" on a session whose `at` is 19:24 -- the artifact's label
+    // quotes the CALL time and the payload states the gun -- so printing both puts two disagreeing
+    // clocks on one row. CONTRACT.md says outright that `kind` is not a time and must not be parsed
+    // for one, so stripping the clock out of it is not available either. Where the session has no
+    // `at` at all, `kind` is the only thing describing it ("Ride · evening", "Rest · by design")
+    // and it is shown in full.
+    if (!t && s.kind) add(body, el("span", "kind mc", s.kind));
+
+    var what = el("p", "what");
+    if (s.sport === "run" || s.sport === "ride") what.appendChild(sportMark(s.sport));
+    add(what, el("span", null, s.title));
+    if (s.statusWord) add(what, el("span", "status", s.statusWord));
+    add(body, what);
+
+    // A CLOSED SESSION STOPS HERE. Everything below is what to do about a session, and a session
+    // already done or deliberately skipped is not one there is anything to do about -- "leave by
+    // 04:55" under it is a number that has passed, which is the one thing this app's largest
+    // element exists never to be.
+    if (!s.statusWord) {
+      var leave = hhmm(s.leaveBy);
+      if (leave) add(body, el("p", "leave", "Leave by " + leave));
+      if (s.place) add(body, el("p", "where", s.place));
+      if (s.travel) add(body, el("p", "where", s.travel));
+
+      if (Array.isArray(s.numbers) && s.numbers.length) {
+        var figs = el("ul", "figs");
+        for (var i = 0; i < s.numbers.length; i++) {
+          var n = s.numbers[i];
+          if (!n || typeof n.v !== "string") continue;
+          var fig = el("li");
+          add(fig, el("span", "v", n.v));
+          if (typeof n.l === "string" && n.l) add(fig, el("span", "l", n.l));
+          add(figs, fig);
+        }
+        if (figs.childNodes.length) add(body, figs);
+      }
+
+      if (s.oneRule) add(body, el("p", "srule", s.oneRule));
+      if (s.intention) add(body, el("p", "swhy", s.intention));
+
+      if (Array.isArray(s.bring) && s.bring.length) {
+        var ul = el("ul", "bring");
+        ul.setAttribute("aria-label", "Bring");
+        for (var j = 0; j < s.bring.length; j++) add(ul, el("li", null, s.bring[j]));
+        add(body, ul);
+      }
+    }
+
+    add(li, body);
+    return li;
+  }
+
+  function renderBed(bed) {
+    var p = el("p", "bed");
+    add(p, el("span", "mc", "Bed"));
+    if (bed.plan) add(p, el("span", "plan", bed.plan));
+    if (bed.kind) p.appendChild(document.createTextNode(" · " + bed.kind));
+    if (bed.text) p.appendChild(document.createTextNode(" " + bed.text));
+    return p;
+  }
+
+  function renderDay(d) {
+    var cls = "day";
+    if (d.phase === "past") cls += " day--past";
+    if (d.phase === "today") cls += " day--today";
+    var sec = el("section", cls);
+    if (d.phase === "today") sec.setAttribute("aria-current", "date");
+
+    // A day already spent, collapsed to one line -- no expander, because the mark set ships no
+    // chevron and what a finished day settled is what the weekly artifact is for.
+    if (d.phase === "past") {
+      var p = el("p", "pastline");
+      add(p, el("span", "d", dayLabel(d)));
+      var bits = [];
+      if (d.tag) bits.push(d.tag);
+      var c = d.counts || { total: 0 };
+      if (c.total === 0) {
+        bits.push("nothing planned");
+      } else {
+        // EVERY OUTCOME, or the line lies by omission. Reporting only what was done makes a day of
+        // one done and two missed read as a light day rather than a bad one.
+        if (c.done) bits.push(c.done + " done");
+        if (c.missed) bits.push(c.missed + " missed");
+        if (c.skipped) bits.push(c.skipped + " skipped");
+        if (c.other) bits.push(c.other + " unrecorded");
+      }
+      p.appendChild(document.createTextNode(" · " + bits.join(" · ")));
+      add(sec, p);
+      return sec;
+    }
+
+    var h = el("h2", "dhead");
+    add(h, el("span", "d", dayLabel(d)));
+    if (d.tag) add(h, el("span", "tag", d.tag));
+    if (d.phase === "today") add(h, el("span", "today", "Today"));
+    add(sec, h);
+
+    if (d.sessions.length) {
+      var ul = el("ul", "slots");
+      for (var i = 0; i < d.sessions.length; i++) add(ul, renderSlot(d.sessions[i]));
+      add(sec, ul);
+    } else {
+      add(sec, el("p", "pastline", "Nothing planned."));
+    }
+    if (d.bed) add(sec, renderBed(d.bed));
+    return sec;
+  }
+
+  function renderWeek() {
+    var w = view.week;
+    var h = el("header");
+    if (view.weekLabel) add(h, el("span", "week mc", view.weekLabel));
+    add(root, h);
+
+    // The control that opened this screen says "The week" and so does its heading. Two strings
+    // that have to agree are one string.
+    add(root, el("h1", "weekhead", "The week"));
+    if (typeof w.daysToKiprun === "number" && w.daysToKiprun >= 0) {
+      add(root, el("p", "race", w.daysToKiprun === 0
+        ? "Kiprun is today."
+        : w.daysToKiprun === 1 ? "Kiprun is tomorrow." : "Kiprun in " + w.daysToKiprun + " days."));
+    }
+
+    add(root, renderGauge(w.volume || {}));
+    for (var i = 0; i < w.days.length; i++) add(root, renderDay(w.days[i]));
+
+    // ONLY WHERE TELEGRAM'S OWN ARROW CANNOT APPEAR. On a current client this would be a second
+    // control for an action the header already offers, and furniture recedes.
+    if (!backSupported) {
+      var nav = el("div", "nav");
+      add(nav, navChip("Today", function () { show("today"); }));
+      add(root, nav);
+    }
+  }
+
+  // ── the two screens ───────────────────────────────────────────────────────────────────────
+
+  var screen = "today";
+
+  function paint() {
+    root.textContent = "";
+    if (!view.ok) {
+      add(root, banner("Cannot show the plan", view.error || "Something is wrong with the published plan."));
+      return;
+    }
+    if (screen === "week") renderWeek(); else renderToday();
+  }
+
+  function show(next) {
+    screen = next;
+    // The screen's name goes on the LANDMARK rather than into a visible eyebrow. It gives the
+    // region the name the accessibility guidance asks for, at both ends of the navigation, without
+    // adding a word above the one number this design exists to keep loudest.
+    root.setAttribute("aria-label", next === "week" ? "The week" : "Today");
+    setBackButton(next === "week");
+    paint();
+    // A swapped screen starts at its own top. Without this, returning from the foot of a scrolled
+    // week lands the reader partway down a layout that is no longer there.
+    window.scrollTo(0, 0);
+    root.focus();
+  }
+
+  function render(v) {
+    view = v;
+    screen = "today";
+    root.setAttribute("aria-label", "Today");
+    setBackButton(false);
+    paint();
   }
 
   // Tell Telegram we are up before the network call, so the client stops showing its own
@@ -551,14 +1024,18 @@ footer{margin-top:1.5rem; color:var(--quieter); font-size:.6875rem}
   // The three messages below are chosen from what the CLIENT already knows -- whether it had
   // launch parameters, whether the server said no, whether the network answered at all. They tell
   // a stranger nothing: the server's reply is one 401 with an empty body in every refusal.
-  var params = launchParams();
-  if (!params) {
+  var launch = launchParams();
+  backSupported = atLeast(launch.version, 6, 1) && hasBridge();
+  // Telegram's arrow is a header control, so the page has to say what it does with it.
+  onBackPressed = function () { if (screen === "week") show("today"); };
+
+  if (!launch.data) {
     render({ ok: false, error: "Open this from your chat with Mochi." });
     return;
   }
   fetch("/s", {
     method: "POST",
-    body: params,
+    body: launch.data,
     headers: { "Content-Type": "text/plain;charset=UTF-8" },
     cache: "no-store",
     credentials: "omit",
