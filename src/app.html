@@ -430,13 +430,24 @@ footer{margin-top:1.5rem; color:var(--quieter); font-size:.6875rem}
     // leaveBy is the point of this screen -- but it is present on 13 of 20 sessions in one real
     // artifact and 0 of 17 in the other, so it CANNOT be assumed. Fall back to the start time,
     // and when there is neither, show no clock at all rather than an empty one.
-    var big = hhmm(s.leaveBy), label = "Leave by";
-    if (!big) { big = hhmm(s.at); label = "Starts"; }
+    //
+    // ONCE IT IS UNDER WAY THE NUMBER CHANGES. "Leave by 19:00" read at 19:40 is a time that has
+    // passed, set in the largest type on the screen -- the one element this design cannot afford
+    // to get wrong. What is still ahead of him by then is the END, so that becomes the number
+    // wherever the artifact states one. Where it does not, the start is shown and LABELLED as
+    // having happened: the app never paints its own 90-minute guess as a clock.
+    var iso = s.leaveBy, label = "Leave by";
+    if (!iso) { iso = s.at; label = "Starts"; }
+    if (view.inProgress) {
+      iso = s.until; label = "Until";
+      if (!iso) { iso = s.at; label = "Started"; }
+    }
+    var big = hhmm(iso);
     if (big) {
       var clock = el("p", "clock");
       add(clock, el("span", "label mc", label));
       var time = el("time", null, big);
-      time.setAttribute("datetime", s.leaveBy || s.at);
+      time.setAttribute("datetime", iso);
       add(clock, time);
       var window_ = dayLabel(s);
       var from = hhmm(s.at), to = hhmm(s.until);

@@ -7,7 +7,9 @@ Not a dashboard. Strava and Garmin Connect already cover history, splits and vol
 other app can show is *the plan* — where to be, and **what time to leave**, which is the number
 that changes behaviour at 6am.
 
-One screen. One session, the one after it, and an honest line when neither exists.
+One screen. One session, the one after it, and an honest line when neither exists. The session
+in front of him **stays** in front of him while it is under way — until `until`, or a bounded
+grace where the artifact states none, and never past the moment the next session claims him.
 
 ---
 
@@ -102,14 +104,15 @@ the week cannot fit in 8 KB with the fields the app needs — `intention` and `n
 ## Tests
 
 ```bash
-npm test          # 34 assertions
+npm test          # 47 tests
 ```
 
 - `test/initdata.test.mjs` — the signature algorithm, against initData minted the way Telegram
   mints it rather than by the checker's own code.
-- `test/view.test.mjs` — the four negative controls: every optional field absent, a day with
-  nothing actionable left, data past the staleness threshold, and an empty `days` array. Without
-  these the app would pass its tests while showing stale or empty data as though it were today's.
+- `test/view.test.mjs` — the five negative controls: every optional field absent, a day with
+  nothing actionable left, data past the staleness threshold, an empty `days` array, and a
+  session's hold on the screen running past the next thing he has to leave for. Without these
+  the app would pass its tests while showing stale or empty data as though it were today's.
 - `test/worker.http.test.mjs` — the real Worker in the real runtime, over HTTP. **The case that
   matters is a correctly-signed launch belonging to somebody else**; a suite that only checks the
   happy path proves nothing about an access control.

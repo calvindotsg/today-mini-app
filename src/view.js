@@ -21,6 +21,19 @@ const ACTIONABLE = new Set(["planned"]);
 
 export const STALE_AFTER_HOURS = 18;
 
+// HOW LONG A SESSION HOLDS THE NOW SLOT ONCE IT HAS STARTED.
+//
+// `until` is the artifact's own answer and is used wherever it is there -- but it is optional,
+// and the live week states it on 2 sessions of 20. With no fallback a session leaves the screen
+// the minute it begins, which is the minute he is standing at the start line reading it.
+//
+// 90 minutes is measured off the sessions that DO state an end -- a BFT class is 70 min, the RN
+// meeting 60 -- plus the evening 10 km at about 70. It is deliberately too short for the
+// Saturday long run and the Sunday ride, because the two errors are not the same size: still
+// showing the ride at 08:00 on Sunday costs nothing, and hiding tomorrow's 06:15 gym at 22:00
+// costs the reason this app exists.
+export const IN_PROGRESS_GRACE_MINUTES = 90;
+
 function sgtNow(nowMs) {
   return new Date(nowMs + SGT_OFFSET_MINUTES * 60_000);
 }
@@ -84,6 +97,9 @@ export function buildView(payload, nowMs) {
     ceilingKm: meta.ceilingKm ?? null,
     now: null,
     next: null,
+    // Under way: `now` has started and has not finished. The card is still his, but "Leave by"
+    // has become a number in the past, so the app stops shouting it.
+    inProgress: false,
     laterCount: 0,
     emptyReason: null,
   };
@@ -111,11 +127,43 @@ export function buildView(payload, nowMs) {
     return 0;
   });
 
-  // A session that has already started today is behind you. Untimed ones are never "past".
-  const ahead = upcoming.filter((s) => s.startMs === null || s.startMs >= nowMs);
+  // WHEN A STARTED SESSION STOPS BEING THE ONE IN FRONT OF HIM. This used to be its own start
+  // time, so the screen moved on to tomorrow's gym while he was still warming up for tonight's
+  // run. A session is over when the artifact says it is (`until`), or after a bounded grace when
+  // the artifact says nothing -- and, either way, never later than the moment the NEXT thing
+  // claims him.
+  //
+  // That last clause is the one that matters. "Wake - 04:15" states no end, and holding it for
+  // 90 minutes would swallow 04:55: the leaveBy for the Sunday ride, and the single number this
+  // whole app exists to put in front of him. A session's hold ends where the next one's claim
+  // begins.
+  const grace = IN_PROGRESS_GRACE_MINUTES * 60_000;
+  // What each session asks of him, and when -- the moment he has to move for it, which is
+  // `leaveBy` where there is one and the start where there is not.
+  const claims = upcoming.map((s) => {
+    const leave = parseSgt(s.leaveBy);
+    if (leave === null) return s.startMs;
+    return s.startMs === null ? leave : Math.min(leave, s.startMs);
+  });
+  for (let i = 0; i < upcoming.length; i++) {
+    const s = upcoming[i];
+    if (s.startMs === null) { s.endMs = null; continue; } // a note, not an appointment
+    const stated = parseSgt(s.until);
+    // `until` at or before `at` is upstream nonsense, and must not make a session expire at birth.
+    let end = stated !== null && stated > s.startMs ? stated : s.startMs + grace;
+    for (let j = i + 1; j < upcoming.length; j++) {
+      const claim = claims[j];
+      if (claim !== null && claim > s.startMs && claim < end) end = claim;
+    }
+    s.endMs = end;
+  }
+
+  // Untimed sessions are notes attached to a day, not appointments, so they are never "past".
+  const ahead = upcoming.filter((s) => s.endMs === null || s.endMs > nowMs);
 
   view.now = ahead[0] ?? null;
   view.next = ahead[1] ?? null;
+  view.inProgress = Boolean(view.now && view.now.startMs !== null && view.now.startMs <= nowMs);
   view.laterCount = Math.max(0, ahead.length - 2);
 
   if (!view.now) {
