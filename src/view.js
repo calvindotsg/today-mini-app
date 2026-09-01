@@ -161,7 +161,7 @@ export function buildView(payload, nowMs) {
     return { ok: false, error: "No plan has been published yet." };
   }
   if (payload.v !== 1) {
-    // The contract is owned elsewhere -- by the Claude project that writes the artifact -- so it
+    // The contract is owned elsewhere -- by the skill that writes the artifact -- so it
     // can change without warning. Failing visibly is the requirement; rendering whatever happens
     // to parse is how a page shows nonsense with a straight face.
     return { ok: false, error: "This plan was published in a format this app does not understand." };

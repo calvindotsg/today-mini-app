@@ -1,7 +1,15 @@
 # The `week-state` contract, as measured
 
-**This app does not own this contract.** It is written by the *My Running Advisor* Claude project
-into a weekly artifact, and it can change without warning or notice. Everything below is a
+**This app does not own this contract.** It is written into a weekly artifact by the
+`weekly-training-plan` skill, run from a Claude Code session against the
+[`hermes-training-wiki`](https://github.com/calvindotsg/hermes-training-wiki) store, and it can
+change without warning or notice.
+
+⚠️ **Corrected 2026-09-02.** This read *"the My Running Advisor Claude project"* — a Cowork project
+that the wiki's `AGENTS.md` records as **being deprecated in favour of that store**. Naming a
+retiring writer sends anyone chasing a contract change to a document nobody maintains. **The writer
+changed; the fact that this app does not own the contract did not**, and that is the sentence the
+file exists to carry. Everything below is a
 measurement of three real artifacts, last taken 2026-09-01, not a specification anybody agreed to. The
 consequence is baked into `src/reduce.js`: a shape it does not recognise is **refused**, loudly,
 rather than published half-understood.
@@ -14,8 +22,8 @@ Measured from:
 | **B** | a **closeout** page | 17–23 Aug 2026 |
 | **C** | a **plan** page, measured 2026-09-01 | 31 Aug – 6 Sep 2026 |
 
-The two artifacts are private pages in the Claude project that writes them, so they are identified
-here by shape rather than by id. Nothing below depends on being able to open them — the table is
+The artifacts are private pages on the account that publishes them, so they are identified here by
+shape rather than by id. Nothing below depends on being able to open them — the table is
 the measurement.
 
 ## The finding that matters most
