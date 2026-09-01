@@ -31,9 +31,11 @@ carries the rest of the plan, so I no longer open the artifact to see what Thurs
 | **Neither** | An honest line. A rest day says so; a plan that does not cover today says *that*, separately from a plan that is merely old |
 | **The week** | All seven days: the volume against its ceiling, each day's character and bedtime, and every session with its times, place, figures, the rule decided before the start, and why it exists. Days already spent collapse to one line — what a finished day settled is what the weekly artifact is for |
 
-Getting back is Telegram's own back arrow. The page reads `tgWebAppVersion` out of the launch to
-know whether the client can draw one (Bot API 6.1+), and only draws its own `Today` control when it
-cannot — so a current client gets one way back rather than two.
+Getting back is Telegram's own back arrow, **and** a `Today` control the page draws itself, at the
+top of the week and again at the foot. That redundancy is deliberate and was learned the hard way:
+the in-page control used to be drawn only where the client could not draw an arrow, and on the one
+device that mattered the arrow rendered and did nothing, leaving the week with no exit. A way back
+does not get to depend on a bridge.
 
 The session in front of me **stays** in front of me while it is under way — until the plan's own
 `until`, or a bounded grace where it states none, and never past the moment the next session claims
@@ -128,7 +130,7 @@ own `initData` against it, so every auth path is exercised without a real creden
 
 | Command | What it does |
 | --- | --- |
-| `npm test` | The whole suite, 61 tests |
+| `npm test` | The whole suite, 67 tests |
 | `npm run test:auth` | Just the HTTP auth suite, against the real Worker in the real runtime |
 | `npm run dev` | `wrangler dev` on an emulated KV |
 | `npm run deploy` | Ships to `today.calvin.sg` — CI also does this on merge |
@@ -181,7 +183,7 @@ it is pushed and useless by Wednesday.
 ## Testing
 
 ```sh
-npm test          # 61 tests
+npm test          # 67 tests
 ```
 
 - `test/initdata.test.mjs` — the signature algorithm, against `initData` minted the way **Telegram**
@@ -206,8 +208,10 @@ and would have passed even if the week screen printed no status word at all. The
 CI runs the suite on Node 22, 24 and 26, then deploys `main` and asserts the edge is serving that
 exact commit. ⚠️ **The `production` environment requires a review**, so a merge does not ship on its
 own — it waits for an approval, and until that click `main` is merged and the edge is still serving
-the previous commit. `.github/workflows/drift.yml` re-checks weekly, because `scripts/publish.mjs`
-writes KV directly and the page and the data ship on two independent tracks.
+the previous commit. `.github/workflows/drift.yml` catches that: it re-checks on **every push to
+`main`** and weekly, opening an issue when the edge and the tree disagree and closing it when they
+agree again. It exists because `scripts/publish.mjs` writes KV directly, so the page and the data
+ship on two independent tracks and either can be stale while the other is current.
 
 ## Files
 
