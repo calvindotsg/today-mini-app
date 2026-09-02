@@ -1,6 +1,5 @@
 # today.calvin.sg
 
-[![today.calvin.sg live](https://img.shields.io/website?url=https%3A%2F%2Ftoday.calvin.sg&label=today.calvin.sg&up_message=live&down_message=down)](https://today.calvin.sg)
 [![Build status](https://img.shields.io/github/actions/workflow/status/calvindotsg/today-mini-app/ci.yml?branch=main&label=build)](https://github.com/calvindotsg/today-mini-app/actions/workflows/ci.yml)
 [![Last commit](https://img.shields.io/github/last-commit/calvindotsg/today-mini-app/main?label=last%20commit)](https://github.com/calvindotsg/today-mini-app/commits/main/)
 [![License](https://img.shields.io/github/license/calvindotsg/today-mini-app)](./LICENSE)
