@@ -16,6 +16,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { sandboxEnv } from "./helpers.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PUBLISH = join(ROOT, "scripts", "publish.mjs");
@@ -45,9 +46,27 @@ function publish(ws, name) {
   const file = join(TMP, `${name}.json`);
   writeFileSync(file, JSON.stringify(ws));
   // No --put: nothing is written anywhere but dist/payload.json.
-  const r = spawnSync(process.execPath, [PUBLISH, file], { encoding: "utf8", cwd: ROOT });
+  //
+  // 🔴 AND THE ENVIRONMENT ENFORCES THAT, because the flag alone did not. On 2026-09-02 a mutation
+  // removed the `process.exit(0)` from `publish.mjs`'s `if (!put)` block; these tests fell straight
+  // through to the real `npx wrangler kv key put` and published this fixture over the live week.
+  // `sandboxEnv` puts refusing shims for `npx`, `ssh` and `wrangler` in front of PATH, so the
+  // reachability of production is decided HERE and not by whatever the source happens to say.
+  const r = spawnSync(process.execPath, [PUBLISH, file], {
+    encoding: "utf8", cwd: ROOT, env: sandboxEnv(join(TMP, "bin")),
+  });
   return { code: r.status, out: r.stdout ?? "", err: r.stderr ?? "" };
 }
+
+// The control for the control. A sandbox nobody exercises is a sandbox nobody knows is wired --
+// this proves the shims are actually in front of PATH for the command these tests spawn.
+test("a spawned publisher cannot reach wrangler or the box", () => {
+  const r = spawnSync(process.execPath, ["-e", "require('child_process').execFileSync('npx',['--version'],{stdio:'inherit'})"],
+    { encoding: "utf8", cwd: ROOT, env: sandboxEnv(join(TMP, "bin")) });
+  assert.equal(r.status, 1, "the shim must make npx fail rather than run");
+  assert.match(r.stderr, /REFUSED: a test invoked `npx`/,
+    "and it must say what it refused, so a fall-through is legible rather than silent");
+});
 
 test("a clean week publishes, and says what kinds of night it carries", () => {
   const r = publish(weekState(), "clean");

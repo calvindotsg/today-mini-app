@@ -2,6 +2,8 @@
 // than a re-implementation of the checker. If this and initdata.js ever disagree, one of them is
 // wrong about the docs -- which is the point.
 import { createHmac } from "node:crypto";
+import { mkdirSync, writeFileSync, chmodSync } from "node:fs";
+import { join, delimiter } from "node:path";
 
 export const FAKE_BOT_TOKEN = "123456:AAH-test-token-not-a-real-one";
 // A STAND-IN, deliberately not the real id. The one allowed id lives only in the Worker secret,
@@ -42,4 +44,46 @@ export function mintInitData({
   const p = new URLSearchParams(fields);
   p.set("hash", hash);
   return p.toString();
+}
+
+// ── THE SANDBOX EVERY TEST THAT SPAWNS THE PUBLISHER MUST USE ────────────────────────────────
+//
+// 🔴 THIS EXISTS BECAUSE A TEST RUN PUBLISHED A FIXTURE TO PRODUCTION KV. On 2026-09-02 a
+// mutation-testing pass removed the `process.exit(0)` from `publish.mjs`'s `if (!put)` block --
+// a legitimate mutation, checking that the notification cannot fire on a dry run. Execution then
+// fell through to the real `npx wrangler kv key put` and the real `ssh`, and the tests in
+// publish.test.mjs, which deliberately run WITHOUT `--put`, published their fixture over Calvin's
+// real week. The mutation was "caught" -- tests went red -- so the report looked correct while the
+// damage was already done.
+//
+// The lesson is not "write safer mutations". A mutation pass exists precisely to run code paths
+// that are supposed to be unreachable, so **the blast radius has to be bounded by the environment
+// rather than by the code under test.** `publish.mjs` resolves `npx` and `ssh` from PATH, so a
+// PATH that cannot reach either makes production unreachable by construction, whatever the source
+// says on any given mutation.
+//
+// ⚠️ THE SHIMS EXIT NON-ZERO AND SAY WHY. A silent no-op would let a future fall-through pass
+// unnoticed; a loud failure turns "a test tried to reach production" into a red test naming the
+// tool it tried to reach.
+export function sandboxBin(dir) {
+  mkdirSync(dir, { recursive: true });
+  for (const [tool, why] of [
+    ["npx", "wrangler/KV"],
+    ["ssh", "the Hermes box"],
+    ["wrangler", "KV"],
+  ]) {
+    const p = join(dir, tool);
+    writeFileSync(p,
+      `#!/bin/sh\n` +
+      `echo "REFUSED: a test invoked \\\`${tool}\\\` and would have reached ${why}." >&2\n` +
+      `echo "See sandboxBin() in test/helpers.mjs -- 2026-09-02, a fixture reached production KV." >&2\n` +
+      `exit 97\n`);
+    chmodSync(p, 0o755);
+  }
+  return dir;
+}
+
+/** The env a spawned publisher must be given: PATH with the refusing shims in front. */
+export function sandboxEnv(dir) {
+  return { ...process.env, PATH: `${sandboxBin(dir)}${delimiter}${process.env.PATH}` };
 }
