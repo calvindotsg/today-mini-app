@@ -11,7 +11,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, writeFileSync, readFileSync, existsSync, chmodSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, existsSync, chmodSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname, resolve, delimiter } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -21,6 +21,14 @@ import { reduceWeekState } from "../src/reduce.js";
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PUBLISH = join(ROOT, "scripts", "publish.mjs");
 const TMP = mkdtempSync(join(tmpdir(), "notify-test-"));
+
+// 🔴 SET ONCE, FOR THE WHOLE FILE, so a spawn that builds its own env cannot leak.
+// Every `spawnSync(..., { env: { ...process.env, ... } })` inherits this, which is the point:
+// the first version redirected the archive inside one helper only, and a test that assembled
+// its own env promptly wrote two fixture files into the operator's real
+// ~/.local/state/today-mini-app/published. Same shape as the incident this whole archive exists
+// for — a guard that covered the path everyone remembered and not the one nobody did.
+process.env.TODAY_ARCHIVE_DIR = join(TMP, "archive");
 
 const SGT = (naive) => Date.parse(`${naive}+08:00`);
 
@@ -156,13 +164,26 @@ function run(name, args, sshExit = 0) {
       { kind: "Run", title: "6 km with Bryan", status: "planned", at: "2099-08-31T18:43" },
     ] }],
   }));
+  // 🔴 THE ARCHIVE IS REDIRECTED, not just the PATH. `npx` is shimmed to SUCCEED here, so the
+  // publisher believes the KV write worked and goes on to write its durable copy. Without this
+  // every --put test would deposit a fixture in Calvin's real ~/.local/state archive — the exact
+  // shape of defect that put a fixture in production KV in the first place.
+  const archive = join(TMP, `${name}-archive`);
   const r = spawnSync(process.execPath, [PUBLISH, file, ...args], {
     encoding: "utf8", cwd: ROOT,
-    env: { ...process.env, PATH: `${dir}${delimiter}${process.env.PATH}` },
+    env: {
+      ...process.env,
+      PATH: `${dir}${delimiter}${process.env.PATH}`,
+      TODAY_ARCHIVE_DIR: archive,
+    },
   });
   return {
     code: r.status, out: r.stdout ?? "", err: r.stderr ?? "",
     sent: existsSync(record) ? JSON.parse(readFileSync(record, "utf8")) : null,
+    archive,
+    archived: existsSync(archive)
+      ? readdirSync(archive).filter((f) => f.endsWith(".json")).sort()
+      : [],
   };
 }
 
@@ -215,6 +236,88 @@ test("exit 3 from the box means nothing was sent, and says re-running is safe", 
   const r = run("fail3b", ["--put"], 3);
   assert.match(r.err, /re-running is safe/);
   assert.doesNotMatch(r.err, /Do NOT re-run/);
+});
+
+// ── the durable archive ──────────────────────────────────────────────────────────────────────
+//
+// dist/payload.json was the only copy of a real week on 2026-09-02 and the next test run erased
+// it. These prove the replacement is written on a real publish, only then, and nowhere near the
+// operator's own archive while the suite runs.
+
+// ⚠️ THE REDIRECT ASSERTION FIRST. If TODAY_ARCHIVE_DIR were ignored, every case below would
+// still pass while quietly writing fixtures into ~/.local/state — a suite that looks green and
+// is corrupting the thing it is protecting.
+// 🔴 THE GUARD THAT WOULD HAVE CAUGHT THE LEAK. The per-helper redirect was correct and
+// insufficient: the ssh-leg test below assembles its own env, inherited the default archive path,
+// and wrote two fixture files into the real ~/.local/state/today-mini-app/published. An assertion
+// about ONE call site cannot see that. This one is about the whole file — every spawn of the
+// publisher in this suite must be pointed somewhere disposable, whoever wrote the spawn.
+test("no spawn in this file can reach the operator's real archive", () => {
+  const src = readFileSync(new URL(import.meta.url), "utf8");
+  const spawns = [...src.matchAll(/spawnSync\(process\.execPath, \[PUBLISH[\s\S]{0,600}?\}\);/g)]
+    .map((m) => m[0]);
+  assert.ok(spawns.length >= 3, `expected several publisher spawns, found ${spawns.length}`);
+  for (const call of spawns) {
+    const inheritsEnv = /\.\.\.process\.env/.test(call);
+    const setsArchive = /TODAY_ARCHIVE_DIR/.test(call);
+    assert.ok(inheritsEnv || setsArchive,
+      `a publisher spawn neither inherits process.env (which carries the file-wide redirect) ` +
+      `nor sets TODAY_ARCHIVE_DIR itself:\n${call.slice(0, 200)}`);
+  }
+  // And the redirect itself must not be the real path, or inheriting it proves nothing.
+  assert.ok(process.env.TODAY_ARCHIVE_DIR?.startsWith(TMP));
+  assert.doesNotMatch(process.env.TODAY_ARCHIVE_DIR, /\.local[/\\]state/);
+});
+
+test("the suite's archive is not the operator's archive", () => {
+  const r = run("redirect", ["--put"]);
+  assert.equal(r.code, 0);
+  assert.ok(r.archive.startsWith(TMP), "the archive must be inside the test's temp dir");
+  assert.doesNotMatch(r.archive, /\.local[/\\]state/, "and must not be the real state path");
+  assert.equal(r.archived.length, 1, "and the redirect must have actually received the write");
+});
+
+test("a real publish leaves a durable copy, named so it sorts by week", () => {
+  const r = run("archived", ["--put"]);
+  assert.equal(r.archived.length, 1);
+  assert.match(r.archived[0], /^2026-08-31--/, "the week it covers leads the name");
+  assert.match(r.out, /archived {2}/, "and the publisher says where it went");
+  const saved = JSON.parse(readFileSync(join(r.archive, r.archived[0]), "utf8"));
+  assert.equal(saved.meta.weekStart, "2026-08-31", "the archive is the published payload itself");
+});
+
+// 🔴 THE CASE THE INCIDENT WAS. A dry run must leave no archive at all, or the archive fills with
+// rehearsals and the newest file stops meaning "what the edge is serving".
+test("a run without --put archives nothing", () => {
+  const r = run("dry-archive", []);
+  assert.equal(r.archived.length, 0);
+});
+
+test("a failed notification still leaves the archive, because the week did publish", () => {
+  const r = run("archive-notify-fail", ["--put"], 3);
+  assert.equal(r.code, 3);
+  assert.equal(r.archived.length, 1, "the KV write succeeded, so the copy must exist");
+});
+
+// An archive that grows without bound is a different problem, not a solution.
+test("the archive keeps a bounded number of copies", () => {
+  const { dir } = shimBin("prune", 0);
+  const archive = join(TMP, "prune-archive");
+  spawnSync("mkdir", ["-p", archive]);
+  for (let i = 0; i < 20; i++) writeFileSync(join(archive, `2026-01-${String(i + 1).padStart(2, "0")}--x.json`), "{}");
+  const file = join(TMP, "prune.json");
+  writeFileSync(file, JSON.stringify({
+    meta: { weekLabel: "W36", weekStart: "2026-08-31", weekEnd: "2026-09-06" },
+    days: [{ date: "2026-08-31", dow: "Monday", sessions: [
+      { kind: "Run", title: "x", status: "planned", at: "2099-08-31T18:43" }] }],
+  }));
+  spawnSync(process.execPath, [PUBLISH, file, "--put", "--no-notify"], {
+    encoding: "utf8", cwd: ROOT,
+    env: { ...process.env, PATH: `${dir}${delimiter}${process.env.PATH}`, TODAY_ARCHIVE_DIR: archive },
+  });
+  const kept = readdirSync(archive).filter((f) => f.endsWith(".json"));
+  assert.equal(kept.length, 12, "older copies are pruned to the cap");
+  assert.ok(kept.some((f) => f.startsWith("2026-08-31--")), "and the newest one survives");
 });
 
 // 🔴 THE SSH LEG, PROVEN INDEPENDENTLY. The incident on 2026-09-02 reached production TWICE: the

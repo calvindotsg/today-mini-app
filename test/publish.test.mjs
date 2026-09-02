@@ -22,6 +22,14 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PUBLISH = join(ROOT, "scripts", "publish.mjs");
 const TMP = mkdtempSync(join(tmpdir(), "publish-test-"));
 
+// 🔴 SET ONCE, FOR THE WHOLE FILE, so a spawn that builds its own env cannot leak.
+// Every `spawnSync(..., { env: { ...process.env, ... } })` inherits this, which is the point:
+// the first version redirected the archive inside one helper only, and a test that assembled
+// its own env promptly wrote two fixture files into the operator's real
+// ~/.local/state/today-mini-app/published. Same shape as the incident this whole archive exists
+// for — a guard that covered the path everyone remembered and not the one nobody did.
+process.env.TODAY_ARCHIVE_DIR = join(TMP, "archive");
+
 /** A minimal week that reduces cleanly, so each test changes exactly one thing about it. */
 function weekState(overrides = {}) {
   return {

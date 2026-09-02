@@ -219,6 +219,19 @@ sent (safe to re-run) and 4 when the message went and only the agent wake did no
 
 **Nothing is sent without `--put`.** The dry run the weekly skill uses as its gate stays silent.
 
+### The archive, because `dist/` is not a backup
+
+A successful `--put` also writes the published payload to
+`~/.local/state/today-mini-app/published/`, newest twelve kept.
+
+🔴 **This exists because `dist/payload.json` was the only copy of a real week and a test run erased
+it.** On 2026-09-02 a mutation pass published a fixture over the live week; recovery came from
+`dist/payload.json` — and the next `npm test` overwrote it, because the publisher rewrites that file
+on **every** run, `--put` or not. The archive is written only on a real publish, only after the KV
+write succeeds, and lives outside the repository so `rm -rf dist`, a fresh clone and the suite
+cannot touch it. `TODAY_ARCHIVE_DIR` overrides the path; the tests set it file-wide and assert they
+did.
+
 ## Testing
 
 ```sh

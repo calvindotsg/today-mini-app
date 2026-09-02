@@ -13,7 +13,8 @@
 // the format, so a regex for that id finds the DOCUMENTATION before the data and parses prose as
 // JSON. Comments are stripped first. This has bitten this template before.
 
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync } from "node:fs";
+import { homedir } from "node:os";
 import { execFileSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -41,6 +42,26 @@ const SIZE_BUDGET = 24 * 1024;       // fail-closed ceiling, see README "Payload
 // portfolio-v2 or break its weekly drift gate -- plus a new Access application, to serve exactly
 // one caller that already has an Access-gated route in. `ssh-hermes` is that route. Nothing new
 // is exposed, and no secret lives on this side: the box signs with a key this repo never sees.
+// ── THE ARCHIVE ──────────────────────────────────────────────────────────────────────────────
+//
+// 🔴 dist/payload.json IS NOT A BACKUP, and on 2026-09-02 it was the only copy of a real week.
+// A mutation-testing pass published a fixture over the live week in KV; the recovery came from
+// dist/payload.json — and then the very next `npm test` OVERWROTE it, because the publisher
+// rewrites that file on every run, --put or not. The artifact that saved the incident destroys
+// itself. This writes a durable copy on a REAL publish only.
+//
+// ⚠️ OUTSIDE THE REPOSITORY, deliberately. `dist/` is gitignored scratch that `rm -rf dist`,
+// a fresh clone and every test run are all entitled to erase. A recovery copy has to survive
+// exactly those.
+//
+// ⚠️ AND OVERRIDABLE, because the tests spawn this publisher with a shimmed `npx` that "succeeds"
+// — so without the override they would write fixtures into the real archive. Redirect-before-use,
+// asserted in test/notify.test.mjs, is the same rule the Hermes TTS suite had to learn after
+// writing 132 lines into the production log.
+const ARCHIVE_DIR = process.env.TODAY_ARCHIVE_DIR
+  || `${homedir()}/.local/state/today-mini-app/published`;
+const ARCHIVE_KEEP = 12;   // ~3 months of weekly publishes, plus mid-week reconciles
+
 const SSH_HOST = "ssh-hermes";
 const NOTIFY_CMD = "bin/hermes-week-notify";
 const NOTIFY_TIMEOUT_MS = 60_000;
@@ -198,6 +219,29 @@ execFileSync("npx", ["--yes", WRANGLER, "kv", "key", "put", KV_KEY,
   "--path", `${ROOT}/dist/payload.json`, "--binding", "WEEK", "--remote",
   "--config", `${ROOT}/wrangler.jsonc`], { stdio: "inherit", cwd: ROOT });
 console.log("published to the edge.");
+
+// AFTER the write succeeded, never before: an archive of something that did not ship is a lie
+// about what the edge is serving, and it is the copy someone will restore from.
+let archived = null;
+try {
+  mkdirSync(ARCHIVE_DIR, { recursive: true });
+  // Sortable by name, so the prune below needs no stat() and no clock.
+  const stamp = payload.generatedAt.replace(/[:+]/g, "-");
+  archived = `${ARCHIVE_DIR}/${payload.meta.weekStart}--${stamp}.json`;
+  writeFileSync(archived, json);
+
+  const kept = readdirSync(ARCHIVE_DIR).filter((f) => f.endsWith(".json")).sort();
+  for (const stale of kept.slice(0, Math.max(0, kept.length - ARCHIVE_KEEP))) {
+    rmSync(`${ARCHIVE_DIR}/${stale}`, { force: true });
+  }
+  console.log(`archived  ${archived}`);
+} catch (e) {
+  // ⚠️ A WARNING, NEVER A REFUSAL. The week is already at the edge; failing here would report a
+  // successful publish as broken. But it is said out loud, because a silent archive failure is
+  // indistinguishable from a working one right up until the day it is needed.
+  console.error(`warning   could not write the archive copy: ${e.message}`);
+  console.error("          The publish itself is fine. Recovery would fall back to KV.");
+}
 
 // ── and only now, tell him ───────────────────────────────────────────────────────────────────
 //
