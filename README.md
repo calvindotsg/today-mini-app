@@ -180,10 +180,49 @@ week, 3.9 KB brotli on the wire — and refuses above a 24 KB ceiling. The Worke
 today-and-the-next-two per request, because a slice baked in at publish time is correct on the day
 it is pushed and useless by Wednesday.
 
+### And then it says so in Telegram
+
+A published week nobody is told about is a week found by opening the app on the off chance. So a
+successful `--put` also sends one message, with two buttons that open this app on the screen named:
+
+| | |
+|---|---|
+| **Today** | `t.me/calvindotsg_bot/training?startapp=today` |
+| **The week** | `t.me/calvindotsg_bot/training?startapp=week` |
+
+Telegram delivers `startapp` to the page as `tgWebAppStartParam`, in the same URL fragment as the
+launch credential — so the screen is chosen **before the first paint**, with no extra round trip.
+`screenFor()` maps it through a **closed set**: `week` opens the week, and everything else —
+an old link, a typo, a probe — opens today. It is read from an unsigned part of the URL and is
+never treated as a credential; both screens render the same already-authorised week.
+
+🔴 **The message is sent by the Hermes box, not by this repo, and not over HTTP.** That box has a
+Hetzner firewall with **zero rules**, and its gateway container sits on an `internal: true` Docker
+bridge with **no published port**; the tunnel carries exactly two ingress rules, the dashboard and
+ssh. A public webhook endpoint would have meant a new hostname — and therefore a DNS record, which
+on `calvin.sg` must go through octoDNS in `portfolio-v2` or break its weekly drift gate — plus a
+new Access application, all to serve one caller that already had an Access-gated route in. So
+`publish.mjs` pipes a small envelope over that existing `ssh ssh-hermes` route into
+`~/bin/hermes-week-notify`, which signs and sends on the far side. **No Hermes credential exists on
+this side at all**, and nothing new is exposed to the internet.
+
+The envelope is a summary, not the week: the label, the dates, the counts, and the one session that
+is next. It has to be, because the box **cannot read `today.calvin.sg`** — `calvin.sg` is
+deliberately absent from its egress allowlist, so nothing over there can fetch what it was not sent.
+
+⚠️ **A notification failure is exit 3, not exit 1, and the difference is the point.** By then the
+week *is* at the edge and the app *is* serving it; reporting that as a failed publish invites a
+republish of something that published fine. The two halves are separated too, because `sendMessage`
+has no idempotency and a blind re-run posts a second message — so the box exits 3 when nothing was
+sent (safe to re-run) and 4 when the message went and only the agent wake did not (do not re-run).
+`--no-notify` skips the whole thing.
+
+**Nothing is sent without `--put`.** The dry run the weekly skill uses as its gate stays silent.
+
 ## Testing
 
 ```sh
-npm test          # 67 tests
+npm test          # 91 tests
 ```
 
 - `test/initdata.test.mjs` — the signature algorithm, against `initData` minted the way **Telegram**
@@ -198,6 +237,15 @@ npm test          # 67 tests
   **an unknown key inside `bed`**, which the allowlist has to drop even though `pick` does not
   recurse. Each was checked by breaking the code it guards and watching it fail.
 - `test/publish.test.mjs` — the publisher's two content gates, by running the publisher.
+- `test/notify.test.mjs` — the envelope, and the wiring that sends it. The wiring half runs the
+  real `--put` path with **`npx` and `ssh` shimmed onto `PATH`**, so the publisher genuinely
+  spawns something, pipes the envelope into it and reads its exit code — only the far end is
+  fake, and nothing touches KV or the box. A source grep was the alternative and it passes on
+  code that is never reached.
+- `test/deeplink.test.mjs` — `?startapp=`, against the **shipped source**. `screenFor()` and
+  `launchParams()` have to live inline in `src/app.html` (the page is one document, deliberately),
+  so these tests cut the real functions out of the file and run them. A copy in a module would
+  have been the easy path and is the one `view.test.mjs` already warns about.
 - `test/worker.http.test.mjs` — the real Worker in the real runtime, over HTTP.
 
 One control was deliberately **not** written: *"every status prints its own word."* Nothing in the
@@ -221,6 +269,7 @@ ship on two independent tracks and either can be stale while the other is curren
 | `src/initdata.js` | Telegram signature validation. Deliberately small so it can be re-read against the docs in a minute |
 | `src/reduce.js` | week-state → the published payload. Two allowlists |
 | `src/view.js` | payload + a clock → what the one screen shows. Pure; no DOM |
+| `src/notify.js` | the reduced week → the summary envelope the Hermes box is sent. A named subset, never a spread |
 | `src/app.html` | The one screen, in the calvin.sg design system |
 | `scripts/publish.mjs` | The publisher |
 | `CONTRACT.md` | The `week-state` shape, **measured** across two artifacts. Read this before changing `reduce.js` |

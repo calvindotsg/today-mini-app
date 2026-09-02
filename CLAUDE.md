@@ -32,6 +32,7 @@ a Claude session ──► scripts/publish.mjs ──► Cloudflare KV ──►
 | `src/reduce.js` | `week-state` → the published payload. Four **allowlists**, so a new upstream field cannot start being published by accident. `BED_FIELDS` is one level down, because `pick` does not recurse. |
 | `src/view.js` | payload + a clock → what the two screens show. Pure, no DOM. |
 | `src/app.html` | Both screens, in the calvin.sg design system. Templated per request with a CSP nonce. |
+| `src/notify.js` | the published payload → the **summary envelope** the Hermes box is sent on a successful `--put`. A named subset picked field by field, never a spread — the artifact grows fields without notice, and a spread would ship each new one to a second machine the week it appeared. |
 | `scripts/publish.mjs` | The publisher, and **two content gates**: a refusal on raw markup in any published field, and a warning on anything that reads like a revision of an earlier plan. |
 | `CONTRACT.md` | The `week-state` shape, **measured** rather than specified. Read before changing `reduce.js`. |
 
