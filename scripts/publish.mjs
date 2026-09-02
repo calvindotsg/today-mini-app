@@ -60,6 +60,16 @@ const SIZE_BUDGET = 24 * 1024;       // fail-closed ceiling, see README "Payload
 // writing 132 lines into the production log.
 const ARCHIVE_DIR = process.env.TODAY_ARCHIVE_DIR
   || `${homedir()}/.local/state/today-mini-app/published`;
+
+// ⚠️ AND `dist/` IS OVERRIDABLE FOR THE SAME REASON THE ARCHIVE IS. Two test files spawn this
+// publisher and `node --test` runs files CONCURRENTLY, so both were writing `dist/payload.json`
+// at once — and `dist/payload.json` is the artifact that recovered the live week on 2026-09-02.
+// A suite racing over the operator's only recovery copy is the §16 shape exactly: bound the
+// blast radius in the environment, then assert every spawn inherits it.
+const DIST_DIR = process.env.TODAY_DIST_DIR || `${ROOT}/dist`;
+// Printed, not the absolute path, so the default run's output stays the short line the
+// routine quotes back — while an overridden run says out loud that it is not writing to dist/.
+const DIST_LABEL = process.env.TODAY_DIST_DIR ? DIST_DIR : "dist";
 const ARCHIVE_KEEP = 12;   // ~3 months of weekly publishes, plus mid-week reconciles
 
 const SSH_HOST = "ssh-hermes";
@@ -204,9 +214,38 @@ if (!probe.coversToday) {
   console.log("note      this plan does not cover today, and the app will say so plainly.");
 }
 
-mkdirSync(`${ROOT}/dist`, { recursive: true });
-writeFileSync(`${ROOT}/dist/payload.json`, json);
-console.log(`wrote     dist/payload.json`);
+mkdirSync(DIST_DIR, { recursive: true });
+writeFileSync(`${DIST_DIR}/payload.json`, json);
+console.log(`wrote     ${DIST_LABEL}/payload.json`);
+
+// ── THE ENVELOPE, WRITTEN HERE AND NOT IN THE NOTIFY LEG ─────────────────────────────────────
+//
+// Built ONCE, before the `--put` gate, and reused verbatim by the notify leg below. Two reasons,
+// and the second is the one that changed the architecture:
+//
+// 1. THE FILE AND THE MESSAGE MUST BE THE SAME BYTES. Building it twice would let the committed
+//    record of what was announced differ from what was actually announced — by a clock tick
+//    today, by a code path tomorrow. One build, one object, two consumers.
+//
+// 2. 🔴 THE UNATTENDED PATH NEVER REACHES THE NOTIFY LEG AT ALL. `training-week-publish` runs
+//    with no flags: it reduces, commits the payload to the private wiki as
+//    `published/<stem>.json`, and a GitHub Action writes the edge store on merge. `--put` is
+//    never passed, so until now `buildEnvelope` was unreachable on the only path that publishes
+//    unattended, and a week reached the phone with nothing announcing it.
+//
+//    The Hermes box cannot close that gap on its own side: it has NO node (measured 2026-09-02,
+//    `node: command not found`), and src/notify.js says in its own header why re-implementing
+//    this there would be wrong even if it did. So the routine copies this file to
+//    `announce/<same stem>.json` in the wiki, and a timer on the box reads it VERBATIM and feeds
+//    it to ~/bin/hermes-week-notify — the same tool, the same envelope, a different courier.
+//
+// ⚠️ It is `dist/`, which is gitignored scratch: this app never commits an envelope. The public
+// repo must not hold session titles, places or leave-by times — that is the whole reason the
+// payload lives in the private wiki. Writing it here is what lets a caller who has somewhere
+// private to put it do so.
+const envelope = buildEnvelope(payload, Date.now());
+writeFileSync(`${DIST_DIR}/envelope.json`, JSON.stringify(envelope));
+console.log(`wrote     ${DIST_LABEL}/envelope.json`);
 
 if (!put) {
   console.log("\nnot published — re-run with --put to write it to the edge.");
@@ -216,7 +255,7 @@ if (!put) {
 // KV is written through wrangler, NOT through the Worker. There is deliberately no authenticated
 // write path on today.calvin.sg: a read-only public surface has no endpoint that changes state.
 execFileSync("npx", ["--yes", WRANGLER, "kv", "key", "put", KV_KEY,
-  "--path", `${ROOT}/dist/payload.json`, "--binding", "WEEK", "--remote",
+  "--path", `${DIST_DIR}/payload.json`, "--binding", "WEEK", "--remote",
   "--config", `${ROOT}/wrangler.jsonc`], { stdio: "inherit", cwd: ROOT });
 console.log("published to the edge.");
 
@@ -255,7 +294,6 @@ if (noNotify) {
   process.exit(0);
 }
 
-const envelope = buildEnvelope(payload, Date.now());
 try {
   const out = execFileSync("ssh", ["-o", "BatchMode=yes", "-o", "ConnectTimeout=20", SSH_HOST, NOTIFY_CMD], {
     input: JSON.stringify(envelope),

@@ -29,6 +29,12 @@ const TMP = mkdtempSync(join(tmpdir(), "publish-test-"));
 // ~/.local/state/today-mini-app/published. Same shape as the incident this whole archive exists
 // for — a guard that covered the path everyone remembered and not the one nobody did.
 process.env.TODAY_ARCHIVE_DIR = join(TMP, "archive");
+// 🔴 AND `dist/` TOO, for a reason the archive redirect does not cover. `node --test` runs test
+// FILES concurrently, so this suite and test/notify.test.mjs were both writing the operator's
+// real dist/payload.json at the same time — the artifact that recovered the live week on
+// 2026-09-02. Two suites racing over the only recovery copy is the same defect as writing to the
+// production log, one directory along.
+process.env.TODAY_DIST_DIR = join(TMP, "dist");
 
 /** A minimal week that reduces cleanly, so each test changes exactly one thing about it. */
 function weekState(overrides = {}) {
