@@ -29,6 +29,9 @@ const TMP = mkdtempSync(join(tmpdir(), "notify-test-"));
 // ~/.local/state/today-mini-app/published. Same shape as the incident this whole archive exists
 // for — a guard that covered the path everyone remembered and not the one nobody did.
 process.env.TODAY_ARCHIVE_DIR = join(TMP, "archive");
+// See test/publish.test.mjs for why dist/ is redirected as well: the two files run concurrently
+// and were racing over the operator's only recovery copy of a published week.
+process.env.TODAY_DIST_DIR = join(TMP, "dist");
 
 const SGT = (naive) => Date.parse(`${naive}+08:00`);
 
@@ -177,9 +180,12 @@ function run(name, args, sshExit = 0) {
       TODAY_ARCHIVE_DIR: archive,
     },
   });
+  const envelopeFile = join(process.env.TODAY_DIST_DIR, "envelope.json");
   return {
     code: r.status, out: r.stdout ?? "", err: r.stderr ?? "",
     sent: existsSync(record) ? JSON.parse(readFileSync(record, "utf8")) : null,
+    envelopeFile,
+    wrote: existsSync(envelopeFile) ? JSON.parse(readFileSync(envelopeFile, "utf8")) : null,
     archive,
     archived: existsSync(archive)
       ? readdirSync(archive).filter((f) => f.endsWith(".json")).sort()
@@ -205,6 +211,69 @@ test("--put sends the envelope on the notifier's stdin", () => {
   assert.equal(r.sent.week.start, "2026-08-31");
   assert.equal(r.sent.next.title, "6 km with Bryan");
   assert.match(r.out, /notify {4}sent/);
+});
+
+// ── the envelope as a FILE, which is the whole autonomous path ───────────────────────────────
+//
+// 📌 NEGATIVE CONTROLS, RUN AND RECORDED 2026-09-02 rather than run and discarded. This repo has
+// no mutation driver, so each guard below was put back the way it was by hand and the file re-run:
+//
+//   remove the `writeFileSync(.../envelope.json)`      -> 3 red
+//   add a second `buildEnvelope(...)` call site        -> 1 red (the call-site assertion)
+//   make DIST_DIR ignore TODAY_DIST_DIR                -> 3 red
+//   point the suite's TODAY_DIST_DIR at the real dist/ -> 1 red (the redirect assertion)
+//
+// All four caught, subject restored, 27/27 green afterwards. A guard nobody has broken on purpose
+// is a claim, not evidence.
+//
+// 🔴 `training-week-publish` runs this publisher WITH NO FLAGS and never reaches the notify leg,
+// so before 2026-09-02 buildEnvelope was unreachable on the only path that publishes unattended
+// and a week arrived on the phone with nothing announcing it. The routine now copies this file
+// into the private wiki as `announce/<stem>.json`, and a timer on the Hermes box reads it
+// verbatim — that box has no node and could not build one itself.
+test("a run with no flags still writes the envelope, because that is the unattended path", () => {
+  const r = run("envelope-dry", []);
+  assert.equal(r.code, 0);
+  assert.equal(r.sent, null, "and it still sends nothing");
+  assert.ok(r.wrote, "dist/envelope.json must exist after a no-flag run");
+  assert.equal(r.wrote.event_type, "week_published");
+  assert.equal(r.wrote.week.start, "2026-08-31");
+  assert.equal(r.wrote.next.title, "6 km with Bryan");
+  assert.match(r.out, /wrote {5}.*envelope\.json/);
+});
+
+// 🔴 THE PROPERTY THAT MAKES THE FILE EVIDENCE: what is committed is what gets said. Built once
+// and handed to both consumers, so the record of the announcement cannot drift from the
+// announcement — not by a clock tick, and not by a second code path added later.
+test("the envelope on disk is byte-identical to the one piped to the notifier", () => {
+  const r = run("envelope-same", ["--put"]);
+  assert.equal(r.code, 0);
+  assert.ok(r.wrote && r.sent);
+  assert.deepEqual(r.wrote, r.sent);
+});
+
+// ⚠️ THE TEST ABOVE ASSERTS CONSISTENCY, NOT SINGLE-BUILD, and saying so is cheaper than letting
+// someone read it as the stronger claim. Re-adding a second `buildEnvelope(payload, Date.now())`
+// in the notify leg leaves it GREEN: every field of this fixture is stable across two clock
+// reads, so the two objects would still deep-equal. Measured, not assumed. The single-build
+// property has to be asserted where it lives — one call site in the publisher — which is
+// mechanical and does bite.
+test("the publisher builds the envelope exactly once", () => {
+  const src = readFileSync(PUBLISH, "utf8");
+  const calls = src.match(/buildEnvelope\(/g) ?? [];
+  assert.equal(calls.length, 1,
+    "two build sites let the committed record of what was announced drift from what was sent");
+});
+
+// It is a SUMMARY, and the boundary it crosses is a machine boundary. A field nobody renders is
+// a field shipped to a second system for no reason — asserted on the file, not just on the
+// function, because the file is what now travels.
+test("the envelope file carries the summary and not the week", () => {
+  const r = run("envelope-shape", []);
+  assert.deepEqual(Object.keys(r.wrote).sort(),
+    ["counts", "event_type", "generatedAt", "next", "nextLine", "week"]);
+  assert.equal(r.wrote.days, undefined, "the days never travel");
+  assert.deepEqual(Object.keys(r.wrote.next).sort(), ["at", "leaveBy", "place", "title"]);
 });
 
 test("--no-notify publishes and says plainly that nothing was sent", () => {
@@ -267,6 +336,9 @@ test("no spawn in this file can reach the operator's real archive", () => {
   // And the redirect itself must not be the real path, or inheriting it proves nothing.
   assert.ok(process.env.TODAY_ARCHIVE_DIR?.startsWith(TMP));
   assert.doesNotMatch(process.env.TODAY_ARCHIVE_DIR, /\.local[/\\]state/);
+  // Same question for dist/, which every run writes whether or not it publishes.
+  assert.ok(process.env.TODAY_DIST_DIR?.startsWith(TMP));
+  assert.doesNotMatch(process.env.TODAY_DIST_DIR, new RegExp(`^${ROOT}`));
 });
 
 test("the suite's archive is not the operator's archive", () => {
