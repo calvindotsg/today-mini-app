@@ -217,6 +217,36 @@ test("exit 3 from the box means nothing was sent, and says re-running is safe", 
   assert.doesNotMatch(r.err, /Do NOT re-run/);
 });
 
+// 🔴 THE SSH LEG, PROVEN INDEPENDENTLY. The incident on 2026-09-02 reached production TWICE: the
+// KV write, and then six real Telegram messages through `ssh ssh-hermes bin/hermes-week-notify`.
+// The first reproduction of it only proved the `npx` shim, because npx refuses FIRST and the
+// publisher dies before the ssh call -- so the ssh leg was bounded only transitively, which is a
+// claim about ordering rather than about the sandbox. Here npx SUCCEEDS, so execution genuinely
+// arrives at the ssh call, and the refusal has to come from the ssh shim itself.
+test("even when the KV write succeeds, the notifier cannot reach the box", () => {
+  const dir = join(TMP, "ssh-leg");
+  spawnSync("mkdir", ["-p", dir]);
+  writeFileSync(join(dir, "npx"), "#!/bin/sh\nexit 0\n");                       // the write "works"
+  writeFileSync(join(dir, "ssh"), "#!/bin/sh\necho REFUSED-SSH >&2\nexit 97\n"); // the box does not
+  chmodSync(join(dir, "npx"), 0o755);
+  chmodSync(join(dir, "ssh"), 0o755);
+
+  const file = join(TMP, "ssh-leg.json");
+  writeFileSync(file, JSON.stringify({
+    meta: { weekLabel: "W36", weekStart: "2026-08-31", weekEnd: "2026-09-06" },
+    days: [{ date: "2026-08-31", dow: "Monday", sessions: [
+      { kind: "Run", title: "probe", status: "planned", at: "2099-08-31T18:43" }] }],
+  }));
+  const r = spawnSync(process.execPath, [PUBLISH, file, "--put"], {
+    encoding: "utf8", cwd: ROOT,
+    env: { ...process.env, PATH: `${dir}${delimiter}${process.env.PATH}` },
+  });
+
+  assert.match(r.stdout, /published to the edge/, "the KV write must have been allowed through");
+  assert.match(r.stderr, /REFUSED-SSH/, "and the ssh leg must be refused by the shim, not by ordering");
+  assert.equal(r.status, 3, "a refused notification is exit 3, never a failed publish");
+});
+
 test("an unreachable box is not reported as either half", () => {
   const r = run("fail255", ["--put"], 255);
   assert.equal(r.code, 3);
