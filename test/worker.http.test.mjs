@@ -90,6 +90,22 @@ async function assertDenied(res, what) {
 
 // ── the plan's four cases ──────────────────────────────────────────────────────────────────
 
+// 🔴 THE DEEP LINK CROSSES THE AUTHENTICATION BOUNDARY WITH THE WEEK. The page prefers this copy
+// to the one in the URL, so a response that drops it silently returns the reader to `today` --
+// which is exactly what the week button did before 2026-09-02, and it looked like a working app.
+test("the response carries the signed start_param back to the page", async () => {
+  const res = await post(mintInitData({ userId: ALLOWED_ID, extra: { start_param: "week" } }));
+  assert.equal(res.status, 200);
+  const view = await res.json();
+  assert.equal(view.ok, true);
+  assert.equal(view.startParam, "week");
+});
+
+test("a launch with no deep link answers an empty start_param, not a missing key", async () => {
+  const view = await (await post(mintInitData({ userId: ALLOWED_ID }))).json();
+  assert.equal(view.startParam, "");
+});
+
 test("valid initData for Calvin -> 200 and the week, as JSON", async () => {
   const res = await post(mintInitData({ userId: ALLOWED_ID }));
   assert.equal(res.status, 200);

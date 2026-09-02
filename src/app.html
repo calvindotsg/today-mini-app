@@ -554,18 +554,27 @@ details[open] > summary .disc{transform:rotate(90deg)}
   // it that way -- it maps to a closed set rather than trusting the string.
   function launchParams() {
     var sources = [location.hash.replace(/^#/, ""), location.search.replace(/^\?/, "")];
+    var out = { data: "", version: "", startParam: "" };
+    // !! THE START PARAMETER IS COLLECTED FROM ANY SOURCE, INDEPENDENTLY OF THE CREDENTIAL, and
+    // that is the bug this shape replaces. The old loop returned on the FIRST source carrying
+    // `tgWebAppData` and read the start parameter out of that same source -- so a launch that
+    // put the credential in one place and `tgWebAppStartParam` in the other silently opened on
+    // `today`. Every fixture in the suite carried both in the same source, so the suite was
+    // structurally incapable of finding it: a corpus that only contains the easy case describes
+    // a client that always behaves.
     for (var i = 0; i < sources.length; i++) {
       try {
         var p = new URLSearchParams(sources[i]);
         var v = p.get("tgWebAppData");
-        if (v) return {
-          data: v,
-          version: p.get("tgWebAppVersion") || "",
-          startParam: p.get("tgWebAppStartParam") || ""
-        };
+        if (v && !out.data) {
+          out.data = v;
+          out.version = p.get("tgWebAppVersion") || "";
+        }
+        // The fragment is still read first, so it still wins when both carry one.
+        if (!out.startParam) out.startParam = p.get("tgWebAppStartParam") || "";
       } catch (e) { /* fall through */ }
     }
-    return { data: "", version: "", startParam: "" };
+    return out;
   }
 
   // A CLOSED SET, and the default is `today`. Telegram hands over whatever followed `?startapp=`
@@ -1150,9 +1159,21 @@ details[open] > summary .disc{transform:rotate(90deg)}
   // !! THE DEEP LINK IS HONOURED ONLY WHEN THERE IS A WEEK TO SHOW. This is also the error path,
   // and an error state has exactly one screen -- opening a refusal with the back arrow lit and an
   // aria-label reading "The week" would describe a screen that is not on the page.
+  // Which screen a deep link asked for. TWO SOURCES, and the SIGNED one wins.
+  //
+  // !! The URL copy was the only source until a real launch opened on `today` with `?startapp=week`
+  // tapped. `start_param` inside the verified initData carries the same value and is the copy the
+  // bot token vouches for; the page reads it here rather than pre-paint because `screen` was never
+  // decided before the server answered anyway -- the old comment claiming a pre-paint advantage
+  // described a benefit the code did not take.
+  function startParamOf(v) {
+    if (v && v.ok && v.startParam) return v.startParam;
+    return (launch && launch.startParam) || "";
+  }
+
   function render(v) {
     view = v;
-    screen = v && v.ok ? screenFor(launch && launch.startParam) : "today";
+    screen = v && v.ok ? screenFor(startParamOf(v)) : "today";
     root.setAttribute("aria-label", screen === "week" ? "The week" : "Today");
     setBackButton(screen === "week");
     paint();

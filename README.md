@@ -190,11 +190,20 @@ successful `--put` also sends one message, with two buttons that open this app o
 | **Today** | `t.me/calvindotsg_bot/training?startapp=today` |
 | **The week** | `t.me/calvindotsg_bot/training?startapp=week` |
 
-Telegram delivers `startapp` to the page as `tgWebAppStartParam`, in the same URL fragment as the
-launch credential — so the screen is chosen **before the first paint**, with no extra round trip.
-`screenFor()` maps it through a **closed set**: `week` opens the week, and everything else —
-an old link, a typo, a probe — opens today. It is read from an unsigned part of the URL and is
-never treated as a credential; both screens render the same already-authorised week.
+Telegram delivers `startapp` **twice**: to the page as `tgWebAppStartParam` in a URL fragment, and
+inside the signed `initData` as `start_param`. The page reads **both**, and prefers the signed one.
+
+🔴 **It read only the URL until 2026-09-02, and the week button opened `today` on a real launch.**
+Two defects, and the first was ours: `launchParams()` returned on the first source carrying
+`tgWebAppData` and took the start parameter out of *that same source*, so a client that split the
+credential and the deep link across the fragment and the query string silently lost the deep link.
+Every fixture in the suite put both in one place, so it was structurally incapable of finding it —
+a corpus of well-formed launches describes a client that always behaves. The second is that reading
+the URL at all was a guess about where a client puts it: `POST /s` now returns `startParam` from the
+*verified* initData, which is the copy the bot token vouches for and costs no extra round trip,
+because the screen was never chosen before the server answered anyway.
+
+⚠️ Neither source is trusted as a value. `screenFor()` maps it to a closed set of two screens.
 
 🔴 **The message is sent by the Hermes box, not by this repo, and not over HTTP.** That box has a
 Hetzner firewall with **zero rules**, and its gateway container sits on an `internal: true` Docker

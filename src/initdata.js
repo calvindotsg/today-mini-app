@@ -105,5 +105,13 @@ export async function validateInitData(initData, botToken, opts = {}) {
   }
   if (!user || typeof user.id !== "number") return { ok: false, reason: "no-user" };
 
-  return { ok: true, user, authDate };
+  // 🔴 THE SIGNED COPY OF THE DEEP LINK. Telegram duplicates `?startapp=` into BOTH the launch
+  // fragment (`tgWebAppStartParam`) and this field, and the page used to read only the fragment.
+  // That was a guess about where the client puts it, and it lost the week screen on a real
+  // launch. This one is inside the data-check-string, so it is the copy the bot token vouches
+  // for -- strictly better than the URL, and free, because it is already parsed and verified.
+  // Still not trusted as a value: `screenFor` maps it to a closed set of two screens.
+  const startParam = params.get("start_param") ?? "";
+
+  return { ok: true, user, authDate, startParam };
 }
