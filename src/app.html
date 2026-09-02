@@ -139,6 +139,13 @@ dl{margin:0; display:grid; grid-template-columns:auto 1fr; gap:.375rem .75rem; a
 dt{color:var(--quieter); white-space:nowrap}
 dd{margin:0; font-size:.9375rem; overflow-wrap:anywhere}
 
+/* The session's figures on the Now card. Same list and same class as a week row -- a figure reads
+   the same on both screens -- with the space the card's other secondary blocks get, and one step of
+   size back: this card has the room, and the numbers are the prescription rather than a footnote.
+   `.figs` itself is declared with the week screen, which is where it is used seven times over. */
+.card--now .figs{margin-top:.875rem}
+.card--now .figs li{font-size:.875rem}
+
 .rule{border:0; border-top:1px solid var(--hairline); margin:1rem 0}
 .onerule{margin:0; font-size:1rem; line-height:1.45}
 .bring{margin:.75rem 0 0 0; padding:0; list-style:none; display:flex; flex-wrap:wrap; gap:.375rem}
@@ -276,6 +283,13 @@ footer{margin-top:1.5rem; color:var(--quieter); font-size:.6875rem}
 
 .day{padding:1rem 0 0 0; border-top:1px solid var(--card-border)}
 .day:first-of-type{border-top:0; padding-top:0}
+/* TODAY, DRAWN IN FULL ON THE FIRST SCREEN. It is `.day` in every respect but the class, and the
+   class is separate for one measured reason: `.day:first-of-type` above strips the rule and the
+   space from the first day of the week, and on the Today screen this section IS the first one --
+   so sharing the class would silently delete the only thing separating it from the card above it.
+   Everything inside it (`.dhead`, `.tag`, `.slots`, `.bed`, `.pastline`) is styled by its own class
+   and needs nothing further. */
+.dayfull{margin:1.5rem 0 1.25rem 0; padding-top:1.25rem; border-top:1px solid var(--card-border)}
 .dhead{display:flex; flex-wrap:wrap; gap:.375rem .625rem; align-items:baseline;
        margin:0 0 .625rem 0; font-size:.9375rem; font-weight:600}
 .dhead .d{white-space:nowrap}
@@ -685,6 +699,27 @@ details[open] > summary .disc{transform:rotate(90deg)}
     return b;
   }
 
+  // A SESSION'S FIGURES, DRAWN ONCE FOR BOTH SCREENS. `numbers` is `{v, l}[]` and is published
+  // with no per-element filtering (CONTRACT.md records that as a known gap), so every entry is
+  // checked here rather than trusted: an entry without a string `v` is dropped, and a list that
+  // yields nothing produces no <ul> rather than an empty one. Returns a fragment, so the caller
+  // can append unconditionally and an absent `numbers` costs nothing.
+  function figures(numbers) {
+    var frag = document.createDocumentFragment();
+    if (!Array.isArray(numbers) || !numbers.length) return frag;
+    var ul = el("ul", "figs");
+    for (var i = 0; i < numbers.length; i++) {
+      var n = numbers[i];
+      if (!n || typeof n.v !== "string") continue;
+      var fig = el("li");
+      add(fig, el("span", "v", n.v));
+      if (typeof n.l === "string" && n.l) add(fig, el("span", "l", n.l));
+      add(ul, fig);
+    }
+    if (ul.childNodes.length) frag.appendChild(ul);
+    return frag;
+  }
+
   function renderHeader() {
     var h = el("header");
     if (view.weekLabel) add(h, el("span", "week mc", view.weekLabel));
@@ -698,7 +733,14 @@ details[open] > summary .disc{transform:rotate(90deg)}
   function renderSession(s) {
     var c = el("div", "card card--now");
     add(c, el("span", "kind mc", s.kind));
-    add(c, el("h1", null, s.title));
+    // The mark the week screen already gives this session, on the screen it matters most. It is
+    // paired with the title rather than standing alone, which is the design system's whole rule
+    // for a mark -- and `sportMark` carries its own visually-hidden word, so nothing here depends
+    // on colour or on the icon rendering at all.
+    var h = el("h1");
+    if (s.sport === "run" || s.sport === "ride") h.appendChild(sportMark(s.sport));
+    add(h, el("span", null, s.title));
+    add(c, h);
 
     // leaveBy is the point of this screen -- but it is present on 13 of 20 sessions in one real
     // artifact and 0 of 17 in the other, so it CANNOT be assumed. Fall back to the start time,
@@ -735,6 +777,13 @@ details[open] > summary .disc{transform:rotate(90deg)}
     if (s.travel) { add(dl, el("dt", "mc", "Travel")); add(dl, el("dd", null, s.travel)); any = true; }
     if (any) add(c, dl);
 
+    // THE SESSION'S OWN FIGURES, which this card went without for its whole life while the week
+    // screen two taps away printed them. They are the PRESCRIPTION -- "24.0-25.5 kg, military
+    // press, 80-85% of 5RM", "6:06/km, aim at this" -- so the one screen he reads at 06:15 was the
+    // one screen that did not carry the numbers he is about to lift or run to. Same markup and same
+    // class as the week's rows: a figure is a figure on both screens.
+    add(c, figures(s.numbers));
+
     if (s.oneRule) {
       add(c, el("hr", "rule"));
       add(c, el("p", "onerule", s.oneRule));
@@ -748,20 +797,30 @@ details[open] > summary .disc{transform:rotate(90deg)}
     return c;
   }
 
-  function renderNext(s) {
+  // WHAT COMES AFTER TODAY, and deliberately not "the next session". Today is drawn IN FULL below
+  // the Now card, so the second thing in the window is almost always a row that list already
+  // carries -- and repeating it under the list is the one duplication a screen this short cannot
+  // afford. What the list genuinely cannot show is tomorrow and the day after, so that is what this
+  // card is: one line of it, plus the count of the rest.
+  function renderAfterToday(a) {
+    var s = a.next;
     var c = el("div", "card");
-    add(c, el("span", "kind mc", "Next"));
+    add(c, el("span", "kind mc", "After today"));
     var row = el("p", "next");
     var when = dayLabel(s);
     var t = hhmm(s.at);
     if (t) when += " · " + t;
     add(row, el("span", "when", when));
-    add(row, el("span", "what", s.title));
+    var what = el("span", "what");
+    if (s.sport === "run" || s.sport === "ride") what.appendChild(sportMark(s.sport));
+    what.appendChild(document.createTextNode(s.title));
+    add(row, what);
     add(c, row);
-    if (view.laterCount > 0) {
-      add(c, el("p", "later", view.laterCount === 1
-        ? "1 more after that in the next three days."
-        : view.laterCount + " more after that in the next three days."));
+    // The window is today and the next two days, so what is left beyond this row is two days wide.
+    if (a.more > 0) {
+      add(c, el("p", "later", a.more === 1
+        ? "1 more after that in the next two days."
+        : a.more + " more after that in the next two days."));
     }
     return c;
   }
@@ -784,7 +843,6 @@ details[open] > summary .disc{transform:rotate(90deg)}
 
     if (view.now) {
       add(root, renderSession(view.now));
-      if (view.next) add(root, renderNext(view.next));
       if (view.now.intention) {
         var why = el("p", "why");
         add(why, el("span", "mc", "Why this session"));
@@ -798,6 +856,18 @@ details[open] > summary .disc{transform:rotate(90deg)}
           ? "The published plan contains no days at all."
           : "Nothing is still to come in the next three days. Everything in that window is done, missed, or a rest by design."));
     }
+
+    // TODAY, IN FULL. The Now card answers the 6am question and is what this screen is FOR, but it
+    // is one session, and everything the reader could not see without opening the week -- the day's
+    // character, the sessions that are done or declined, the figures, tonight's bedtime -- was one
+    // tap away on a screen he does not open at 06:15.
+    var d = todayDay();
+    if (d) {
+      var full = renderTodayInFull(d, view.now && view.now.date === view.today ? view.now.key : null);
+      if (full) add(root, full);
+    }
+
+    if (view.afterToday.next) add(root, renderAfterToday(view.afterToday));
 
     // The way in to the second screen. A CHIP and not a plated control: the design system spends
     // the offset plate on a page's ONE action, and getting somewhere is chrome. It sits after the
@@ -982,18 +1052,7 @@ details[open] > summary .disc{transform:rotate(90deg)}
       if (s.place) add(body, el("p", "where", s.place));
       if (s.travel) add(body, el("p", "where", s.travel));
 
-      if (Array.isArray(s.numbers) && s.numbers.length) {
-        var figs = el("ul", "figs");
-        for (var i = 0; i < s.numbers.length; i++) {
-          var n = s.numbers[i];
-          if (!n || typeof n.v !== "string") continue;
-          var fig = el("li");
-          add(fig, el("span", "v", n.v));
-          if (typeof n.l === "string" && n.l) add(fig, el("span", "l", n.l));
-          add(figs, fig);
-        }
-        if (figs.childNodes.length) add(body, figs);
-      }
+      body.appendChild(figures(s.numbers));
 
       if (s.oneRule) add(body, el("p", "srule", s.oneRule));
       if (s.intention) add(body, el("p", "swhy", s.intention));
@@ -1087,6 +1146,70 @@ details[open] > summary .disc{transform:rotate(90deg)}
       add(sec, ul);
     } else {
       add(sec, el("p", "pastline", "Nothing planned."));
+    }
+    if (d.bed) add(sec, renderBed(d.bed));
+    return sec;
+  }
+
+  // ── today, in full, on the FIRST screen ───────────────────────────────────────────────────
+  //
+  // These two belong to the Today screen and live here anyway, next to `renderDay`, because the
+  // thing they have to keep is a likeness to it. The Today screen used to carry one session in
+  // detail and a one-line preview of the next; the same day drawn on the week screen carried the
+  // day's tag, EVERY session with its status, its figures and its rule, and the bedtime that closes
+  // the day. Two screens disagreeing about the same day is a defect, and the reader met the poorer
+  // one first.
+  //
+  // THE PARITY IS STRUCTURAL, NOT A PROMISE. This calls `renderSlot` and `renderBed` -- the same
+  // functions, with the same `reveal` argument `renderDay` passes for a day that is not past -- so
+  // a field added to a week row appears here with no second edit. Nothing in the suite renders the
+  // DOM, so a copy of that markup could drift with every test still green; sharing the function is
+  // what makes drift impossible rather than merely unlikely.
+  //
+  // ONE FIELD IS MISSING FROM BOTH AND MUST STAY MISSING: `note`. The artifact prints it inside
+  // its own day card, and it is where the corrections live and where two of the live week's six
+  // notes carry literal <b> tags. `reduce.js` refuses it and `publish.mjs` enforces the refusal.
+  function todayDay() {
+    if (!view.week || !view.week.days) return null;
+    for (var i = 0; i < view.week.days.length; i++) {
+      if (view.week.days[i].phase === "today") return view.week.days[i];
+    }
+    return null;
+  }
+
+  /**
+   * @param d        today, out of the week
+   * @param heroKey  the key of the session already drawn as the Now card, or null when the Now card
+   *                 is showing a LATER day -- which is the case on a day whose plan is spent, and
+   *                 there this block is the only account of what happened.
+   */
+  function renderTodayInFull(d, heroKey) {
+    var others = [];
+    for (var i = 0; i < d.sessions.length; i++) {
+      if (d.sessions[i].key !== heroKey) others.push(d.sessions[i]);
+    }
+    // Nothing to say, and no head to say it under. A day with a tag or a bedtime still has
+    // something the Now card cannot carry, so those alone are enough to draw the block.
+    if (!others.length && !d.bed && !d.tag) return null;
+
+    var sec = el("section", "dayfull");
+    sec.setAttribute("aria-current", "date");
+    // The day's own head, exactly as the week draws it -- MINUS the "Today" dot and word, which is
+    // the one thing that would be furniture here: this whole screen is today.
+    var h = el("h2", "dhead");
+    add(h, el("span", "d", dayLabel(d)));
+    if (d.tag) add(h, el("span", "tag", d.tag));
+    add(sec, h);
+
+    if (others.length) {
+      var ul = el("ul", "slots");
+      // No `reveal`, which is what `renderDay` passes for a day that is not behind him: a closed
+      // session's rule and figures are what to DO about it, and there is nothing to do about one
+      // already done or declined. The status word still prints, so the row says what it was.
+      for (var j = 0; j < others.length; j++) add(ul, renderSlot(others[j]));
+      add(sec, ul);
+    } else {
+      add(sec, el("p", "pastline", heroKey ? "Nothing else today." : "Nothing planned today."));
     }
     if (d.bed) add(sec, renderBed(d.bed));
     return sec;

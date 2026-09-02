@@ -23,10 +23,15 @@ changes what I actually do.
 Two screens. **Today** opens first and answers the 6am question; **The week** is one tap away and
 carries the rest of the plan, so I no longer open the artifact to see what Thursday looks like.
 
+The two never disagree about the same day. **Today** draws today with everything the week screen
+draws it with — it is the same code, not a copy of it — so the one screen I read at 06:15 is not
+the poorer of the two.
+
 | | What it shows |
 | --- | --- |
 | **Now** | The session I am in, or the next one I have to leave for. `Leave by` where the plan states one, the start time where it does not, and `Until` while a session is under way. Place, travel time, the one rule for the session, and what to bring |
-| **Next** | The one after it, so I can see whether tonight commits me to a 6am tomorrow |
+| **Today, in full** | The rest of the day under it, drawn exactly as the week screen draws the same day: the day's character, every other session with its time, status, figures, place and rule, and the bedtime that closes the night |
+| **After today** | The next thing beyond today, so I can see whether tonight commits me to a 6am tomorrow, and how much else is in the window |
 | **Neither** | An honest line. A rest day says so; a plan that does not cover today says *that*, separately from a plan that is merely old |
 | **The week** | All seven days: the volume against its ceiling, each day's character and bedtime, and every session with its times, place, figures, the rule decided before the start, and why it exists. Days already spent collapse to one line — what a finished day settled is what the weekly artifact is for |
 
@@ -129,7 +134,7 @@ own `initData` against it, so every auth path is exercised without a real creden
 
 | Command | What it does |
 | --- | --- |
-| `npm test` | The whole suite, 67 tests |
+| `npm test` | The whole suite, 119 tests |
 | `npm run test:auth` | Just the HTTP auth suite, against the real Worker in the real runtime |
 | `npm run dev` | `wrangler dev` on an emulated KV |
 | `npm run deploy` | Ships to `today.calvin.sg` — CI also does this on merge |

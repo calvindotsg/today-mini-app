@@ -2,7 +2,7 @@
   "name": "today-mini-app",
   "private": true,
   "type": "module",
-  "description": "today.calvin.sg — a Telegram Mini App showing the next training session and the one after it",
+  "description": "today.calvin.sg — a Telegram Mini App showing the session in front of me and the rest of the day",
   "scripts": {
     "test": "node --test test/*.test.mjs",
     "test:auth": "node --test test/worker.http.test.mjs",
