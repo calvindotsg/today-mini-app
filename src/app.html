@@ -540,16 +540,39 @@ details[open] > summary .disc{transform:rotate(90deg)}
   // way back. Telegram puts `tgWebAppVersion` in the same fragment as the credential, so the
   // client's Bot API level is already in hand and costs no round trip and no feature-detection
   // guess -- and the back button it gates on needs 6.1.
+  //
+  // ALSO READS THE START PARAMETER, which is how a `?startapp=` deep link says which screen to
+  // open on. Telegram delivers it as `tgWebAppStartParam` in the SAME fragment as the credential
+  // -- so, like the version, it is already in hand. `start_param` inside the signed initData
+  // carries the same value, but reading it from THERE would mean the screen could not be chosen
+  // until after the server had answered; this is available before the first paint.
+  //
+  // !! IT IS NOT A CREDENTIAL AND IS NOT TREATED AS ONE. It comes from an unsigned part of the
+  // URL, so anyone who can open the page can set it. That is harmless HERE and only here: it
+  // picks between two screens that render the SAME already-authorised week, issues no fetch of
+  // its own, and reaches no field the reader could not see by tapping. `screenFor` is what keeps
+  // it that way -- it maps to a closed set rather than trusting the string.
   function launchParams() {
     var sources = [location.hash.replace(/^#/, ""), location.search.replace(/^\?/, "")];
     for (var i = 0; i < sources.length; i++) {
       try {
         var p = new URLSearchParams(sources[i]);
         var v = p.get("tgWebAppData");
-        if (v) return { data: v, version: p.get("tgWebAppVersion") || "" };
+        if (v) return {
+          data: v,
+          version: p.get("tgWebAppVersion") || "",
+          startParam: p.get("tgWebAppStartParam") || ""
+        };
       } catch (e) { /* fall through */ }
     }
-    return { data: "", version: "" };
+    return { data: "", version: "", startParam: "" };
+  }
+
+  // A CLOSED SET, and the default is `today`. Telegram hands over whatever followed `?startapp=`
+  // -- an old link, a typo, a stale bookmark, someone else's guess -- and the right answer to all
+  // of those is the screen this app has always opened on, never a blank one.
+  function screenFor(startParam) {
+    return startParam === "week" ? "week" : "today";
   }
 
   function atLeast(version, major, minor) {
@@ -1122,11 +1145,16 @@ details[open] > summary .disc{transform:rotate(90deg)}
     root.focus();
   }
 
+  // The screen a launch opens on, which is `today` unless a deep link said otherwise.
+  //
+  // !! THE DEEP LINK IS HONOURED ONLY WHEN THERE IS A WEEK TO SHOW. This is also the error path,
+  // and an error state has exactly one screen -- opening a refusal with the back arrow lit and an
+  // aria-label reading "The week" would describe a screen that is not on the page.
   function render(v) {
     view = v;
-    screen = "today";
-    root.setAttribute("aria-label", "Today");
-    setBackButton(false);
+    screen = v && v.ok ? screenFor(launch && launch.startParam) : "today";
+    root.setAttribute("aria-label", screen === "week" ? "The week" : "Today");
+    setBackButton(screen === "week");
     paint();
   }
 

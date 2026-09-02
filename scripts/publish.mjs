@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Publish a week to the edge.
 //
-//   node scripts/publish.mjs <week.html|week-state.json> [--put] [--dry-run]
+//   node scripts/publish.mjs <week.html|week-state.json> [--put] [--no-notify]
 //
 // The input is the weekly training artifact's HTML, saved to disk. It CANNOT be fetched by a
 // script: the artifact is a private Claude-account resource, so a cron on this Mac has no way to
@@ -19,17 +19,38 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { reduceWeekState, ContractError } from "../src/reduce.js";
 import { buildView } from "../src/view.js";
+import { buildEnvelope } from "../src/notify.js";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const KV_KEY = "week:current";
 const WRANGLER = "wrangler@4.127.1"; // pinned. Bumping it is a decision: the runtime it bundles must support compatibility_date
 const SIZE_BUDGET = 24 * 1024;       // fail-closed ceiling, see README "Payload size"
 
+// ── THE NOTIFICATION ─────────────────────────────────────────────────────────────────────────
+//
+// A published week that nobody is told about is a week he finds by opening the app on the off
+// chance. So a successful KV write also announces itself in Telegram, with the two Mini App
+// buttons -- and it happens HERE rather than as a step in the skill, for the reason the two gates
+// below already argue: a prose requirement lapses in silence and a command does not.
+//
+// 🔴 OVER SSH, NOT OVER HTTP, and that is the security design rather than a convenience. The
+// Hermes box carries a Hetzner firewall with ZERO rules and its gateway container sits on an
+// `internal: true` docker bridge with no published port; the tunnel's only two ingress rules are
+// the dashboard and ssh. Reaching the webhook adapter from the internet would have meant a new
+// public hostname -- and therefore a DNS record, which on calvin.sg must go through octoDNS in
+// portfolio-v2 or break its weekly drift gate -- plus a new Access application, to serve exactly
+// one caller that already has an Access-gated route in. `ssh-hermes` is that route. Nothing new
+// is exposed, and no secret lives on this side: the box signs with a key this repo never sees.
+const SSH_HOST = "ssh-hermes";
+const NOTIFY_CMD = "bin/hermes-week-notify";
+const NOTIFY_TIMEOUT_MS = 60_000;
+
 const args = process.argv.slice(2);
 const file = args.find((a) => !a.startsWith("--"));
 const put = args.includes("--put");
+const noNotify = args.includes("--no-notify");
 if (!file) {
-  console.error("usage: publish.mjs <week.html|week-state.json> [--put]");
+  console.error("usage: publish.mjs <week.html|week-state.json> [--put] [--no-notify]");
   process.exit(2);
 }
 
@@ -177,3 +198,52 @@ execFileSync("npx", ["--yes", WRANGLER, "kv", "key", "put", KV_KEY,
   "--path", `${ROOT}/dist/payload.json`, "--binding", "WEEK", "--remote",
   "--config", `${ROOT}/wrangler.jsonc`], { stdio: "inherit", cwd: ROOT });
 console.log("published to the edge.");
+
+// ── and only now, tell him ───────────────────────────────────────────────────────────────────
+//
+// Everything above this line has already happened. The week IS at the edge, and the app WILL
+// serve it, whatever happens next -- so a failure here must never read as a failed publish.
+// That is why this is exit 3 and not exit 1, and why the line above stays printed. It is the
+// same split ~/bin/hermes-maintenance on that box had to learn: a process whose one failure code
+// means two different things forces the operator to guess which one they are looking at.
+if (noNotify) {
+  console.log("notify    skipped (--no-notify). Nothing has been sent to Telegram.");
+  process.exit(0);
+}
+
+const envelope = buildEnvelope(payload, Date.now());
+try {
+  const out = execFileSync("ssh", ["-o", "BatchMode=yes", "-o", "ConnectTimeout=20", SSH_HOST, NOTIFY_CMD], {
+    input: JSON.stringify(envelope),
+    encoding: "utf8",
+    timeout: NOTIFY_TIMEOUT_MS,
+    // stderr is inherited so the box's own refusal text reaches the operator verbatim rather
+    // than being summarised by this script, which does not know what it means.
+    stdio: ["pipe", "pipe", "inherit"],
+  });
+  for (const line of out.trimEnd().split("\n")) console.log(line);
+  console.log(`notify    sent — next: ${envelope.next ? envelope.next.title : "(nothing ahead)"}`);
+} catch (e) {
+  console.error("");
+  console.error(`NOT NOTIFIED: ${e.message.split("\n")[0]}`);
+  console.error("The week IS published and the app is serving it. What failed is the message.");
+  // 🔴 WHETHER RE-RUNNING IS SAFE DEPENDS ON WHICH HALF FAILED, and the two are not the same
+  // mistake to make. The webhook wake is idempotent -- the box derives its delivery id from a
+  // hash of the envelope, and the adapter drops a repeat inside an hour. `sendMessage` is NOT:
+  // the Bot API has no such notion, so a re-run after a Telegram success posts a SECOND message.
+  // hermes-week-notify splits its codes precisely so this advice can be right rather than
+  // hedged: 3 means nothing was sent, 4 means the message went and only the wake did not.
+  if (e.status === 4) {
+    console.error("Its exit code says the Telegram message DID go out and only the agent wake");
+    console.error("failed. Do NOT re-run this — that would post the message a second time.");
+    console.error("The wake is what is missing, and it costs nothing to skip.");
+  } else if (e.status === 3) {
+    console.error("Its exit code says nothing was sent, so re-running is safe:");
+    console.error(`  node scripts/publish.mjs ${file} --put`);
+  } else {
+    console.error("It did not get far enough to say which half failed. `ssh ssh-hermes true`");
+    console.error("answers whether the box is reachable at all; check Telegram before re-running,");
+    console.error("because a re-run would post a second message if the first one landed.");
+  }
+  process.exit(3);
+}
