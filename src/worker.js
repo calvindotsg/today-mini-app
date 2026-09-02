@@ -119,7 +119,11 @@ export default {
 
       // JSON, not a page. The document is already loaded and already has its nonce; this
       // request exists only to carry the week across the authentication boundary.
-      return new Response(JSON.stringify(buildView(payload, Date.now())), {
+      // ⚠️ ADDED BESIDE THE VIEW, NOT INSIDE buildView. The view is a pure function of the
+      // published week; which screen to open on is a fact about THIS LAUNCH and belongs to the
+      // response, not to the plan. Merging it into buildView would make the same week render
+      // two different shapes and every view assertion depend on a launch.
+      return new Response(JSON.stringify({ ...buildView(payload, Date.now()), startParam: result.startParam }), {
         status: 200,
         headers: {
           "Content-Type": "application/json; charset=utf-8",

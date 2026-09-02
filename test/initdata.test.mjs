@@ -9,6 +9,30 @@ test("a real launch validates and yields the user", async () => {
   assert.equal(r.user.id, ALLOWED_ID);
 });
 
+// 🔴 THE SIGNED COPY OF THE DEEP LINK. Telegram duplicates `?startapp=` into the URL fragment
+// AND into this field. The page read only the URL, which was a guess about where a client puts
+// it, and on a real launch the week button opened `today`. This copy is inside the
+// data-check-string, so it is the one the bot token vouches for.
+test("start_param comes out of a verified launch", async () => {
+  const r = await validateInitData(mintInitData({ extra: { start_param: "week" } }), FAKE_BOT_TOKEN, { nowMs: Date.now() });
+  assert.equal(r.ok, true);
+  assert.equal(r.startParam, "week");
+});
+
+test("a launch with no start_param yields an empty string, never undefined", async () => {
+  const r = await validateInitData(mintInitData(), FAKE_BOT_TOKEN, { nowMs: Date.now() });
+  assert.equal(r.ok, true);
+  assert.equal(r.startParam, "");
+});
+
+// ⚠️ IT IS PART OF THE SIGNATURE, so a tampered one cannot ride along. Asserted rather than
+// assumed: the value picks a screen, and "signed" is the whole reason it is preferred to the URL.
+test("start_param is inside the data-check-string", async () => {
+  const bad = mintInitData({ extra: { start_param: "week" }, dcsOmit: ["start_param"] });
+  const r = await validateInitData(bad, FAKE_BOT_TOKEN, { nowMs: Date.now() });
+  assert.equal(r.ok, false);
+});
+
 test("a tampered hash is refused", async () => {
   const r = await validateInitData(mintInitData({ corruptHash: true }), FAKE_BOT_TOKEN);
   assert.deepEqual(r, { ok: false, reason: "bad-hash" });
