@@ -190,20 +190,20 @@ successful `--put` also sends one message, with two buttons that open this app o
 | **Today** | `t.me/calvindotsg_bot/training?startapp=today` |
 | **The week** | `t.me/calvindotsg_bot/training?startapp=week` |
 
-Telegram delivers `startapp` **twice**: to the page as `tgWebAppStartParam` in a URL fragment, and
-inside the signed `initData` as `start_param`. The page reads **both**, and prefers the signed one.
+Telegram delivers `startapp` twice: to the page as `tgWebAppStartParam` in the URL, and inside the
+signed launch data as `start_param`. The page reads both and prefers the signed one, which is the
+copy the bot token vouches for. It costs no extra round trip, because the screen was never chosen
+before the server answered anyway.
 
-🔴 **It read only the URL until 2026-09-02, and the week button opened `today` on a real launch.**
-Two defects, and the first was ours: `launchParams()` returned on the first source carrying
-`tgWebAppData` and took the start parameter out of *that same source*, so a client that split the
-credential and the deep link across the fragment and the query string silently lost the deep link.
-Every fixture in the suite put both in one place, so it was structurally incapable of finding it —
-a corpus of well-formed launches describes a client that always behaves. The second is that reading
-the URL at all was a guess about where a client puts it: `POST /s` now returns `startParam` from the
-*verified* initData, which is the copy the bot token vouches for and costs no extra round trip,
-because the screen was never chosen before the server answered anyway.
+The page used to read only the URL, and it read it in the wrong place: `launchParams()` returned as
+soon as it found the launch credential and looked for the start parameter in that same half of the
+URL. A client that puts the credential in the fragment and the start parameter in the query string
+lost the deep link, and the week button opened today. Every fixture in the suite put both in the
+same half, so nothing caught it.
 
-⚠️ Neither source is trusted as a value. `screenFor()` maps it to a closed set of two screens.
+Neither source is trusted as a value. `screenFor()` maps it through a closed set: `week` opens the
+week, and everything else — an old link, a typo, a probe — opens today. Both screens render the
+same already-authorised week.
 
 🔴 **The message is sent by the Hermes box, not by this repo, and not over HTTP.** That box has a
 Hetzner firewall with **zero rules**, and its gateway container sits on an `internal: true` Docker
