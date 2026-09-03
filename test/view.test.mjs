@@ -337,6 +337,84 @@ test("a day with no tag and no bed renders as a day, not as an empty slot", () =
   assert.equal(noRace.daysToKiprun, null, "no race date published means no countdown, not NaN");
 });
 
+// ── today, in full, on the FIRST screen ─────────────────────────────────────────────────────
+//
+// The Today screen draws the same day the week screen draws, so it has to leave OUT the session
+// already standing at the top of it as the Now card, and it has to say what comes after today
+// without repeating a row that list already carries. Both are decided here rather than in the
+// renderer, for the reason the status words are: nothing in this suite renders the DOM, so a rule
+// that lived in app.html could go wrong with every test still green.
+
+test("the Now card is addressable in the week, so today can be listed without drawing it twice", () => {
+  // TWO SESSIONS WITH THE SAME TITLE ON ONE DAY, which is the case that decides the shape of the
+  // key. `at` is optional across the contract and a title is not unique, so neither can address a
+  // session; only its position in the day can.
+  const p = payload([day("2026-08-25", "Tuesday", [
+    sess({ title: "BFT", at: "2026-08-25T06:15" }),
+    sess({ title: "BFT", at: "2026-08-25T19:00" }),
+  ])], WEEK_META);
+  const v = buildView(p, SGT("2026-08-25T05:00"));
+
+  assert.equal(v.now.key, "2026-08-25#0");
+  const matched = v.week.days[0].sessions.filter((s) => s.key === v.now.key);
+  assert.equal(matched.length, 1, "a key that is not per-session would empty the whole day");
+  assert.equal(matched[0].at, "2026-08-25T06:15", "and it has to be the 06:15, not its twin");
+  assert.equal(v.week.days[0].sessions[1].key, "2026-08-25#1");
+});
+
+test("what comes after today skips the rows today's own list already carries", () => {
+  const p = payload([
+    day("2026-08-25", "Tuesday", [
+      sess({ title: "BFT", at: "2026-08-25T06:15" }),
+      sess({ title: "Meeting", at: "2026-08-25T20:00" }),
+    ]),
+    day("2026-08-26", "Wednesday", [sess({ title: "ARC", at: "2026-08-26T19:00" })]),
+  ], WEEK_META);
+  const v = buildView(p, SGT("2026-08-25T05:00"));
+
+  assert.equal(v.next.title, "Meeting", "the second thing in the window is still today's");
+  assert.equal(v.afterToday.next.title, "ARC", "but the card under the day must not repeat it");
+  assert.equal(v.afterToday.more, 0);
+});
+
+test("the count after today is two days wide, not three", () => {
+  const p = payload([
+    day("2026-08-25", "Tuesday", [
+      sess({ title: "BFT", at: "2026-08-25T06:15" }),
+      sess({ title: "Meeting", at: "2026-08-25T20:00" }),
+    ]),
+    day("2026-08-26", "Wednesday", [sess({ title: "ARC", at: "2026-08-26T19:00" }), sess({ title: "Kit" })]),
+    day("2026-08-27", "Thursday", [sess({ title: "Long run", at: "2026-08-27T06:00" })]),
+    day("2026-08-28", "Friday", [sess({ title: "Outside the window", at: "2026-08-28T06:00" })]),
+  ], WEEK_META);
+  const v = buildView(p, SGT("2026-08-25T05:00"));
+
+  assert.equal(v.afterToday.next.title, "ARC");
+  assert.equal(v.afterToday.more, 2, "Kit and Thursday's run; Friday is outside the three-day window");
+  assert.equal(v.laterCount, 3, "and the three-day count is unchanged -- it still counts the Meeting");
+});
+
+// 🔴 THE CASE A DATE FILTER ALONE GETS WRONG, and it is the commonest evening on this app. When
+// today's plan is spent the Now card moves on to TOMORROW -- so "everything ahead that is not
+// today" hands back the session already set in the largest type on the screen, and the day ends
+// with its own headline printed twice.
+test("on a spent day the Now card is tomorrow's, and the card after today is not it again", () => {
+  const p = payload([
+    day("2026-08-25", "Tuesday", [sess({ title: "BFT", status: "done", at: "2026-08-25T06:15" })]),
+    day("2026-08-26", "Wednesday", [sess({ title: "ARC", at: "2026-08-26T19:00" })]),
+  ], WEEK_META);
+  const v = buildView(p, SGT("2026-08-25T21:00"));
+
+  assert.equal(v.now.title, "ARC");
+  assert.notEqual(v.now.date, v.today, "the Now card belongs to another day, so nothing is excluded");
+  assert.equal(v.afterToday.next, null, "the Now card must not also be the card after today");
+  assert.equal(v.afterToday.more, 0);
+  // And the spent day is still there for the block to draw, which is the whole point of it: on
+  // this evening it is the only account of what happened today.
+  assert.equal(v.week.days[0].phase, "today");
+  assert.equal(v.week.days[0].sessions[0].statusWord, "done");
+});
+
 // 🔴 THE ALLOWLIST REACHES ONE LEVEL DOWN, and it has to: `pick` does not recurse, so naming
 // "bed" alone would copy every key the artifact ever adds to it. This is the direct analogue of
 // the session-level check above, for the two structures this change introduced.

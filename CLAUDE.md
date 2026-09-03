@@ -10,7 +10,7 @@ cost a session.
 
 | Task | Command |
 |---|---|
-| Test | `npm test` (67 tests) |
+| Test | `npm test` (119 tests) |
 | Auth suite only | `npm run test:auth` |
 | Dev server | `npm run dev` |
 | Deploy | `npm run deploy` — CI also does this on merge to `main`, **behind an approval** (trap 2) |
@@ -40,6 +40,19 @@ a Claude session ──► scripts/publish.mjs ──► Cloudflare KV ──►
 week` carries all seven days and is reached by a chip. There is no second request and no route for
 the second screen — the whole week already crosses the auth boundary in the one `POST /s` response,
 so there is nothing extra to get the access control right on.
+
+🔴 **The two screens must not disagree about the same day, and the guarantee is STRUCTURAL.**
+`renderTodayInFull` in `src/app.html` draws today by calling `renderSlot` and `renderBed` — the
+same functions `renderDay` calls, with the same `reveal` argument — so a field added to a week row
+appears on the Today screen with no second edit. **Do not copy that markup into a Today-specific
+renderer.** Nothing in the suite renders the DOM, so a copy would drift with every test still green;
+sharing the function is what makes drift impossible rather than merely unlikely. The Now card is
+excluded from the list by `key` (`date#index`), which `view.js` puts on both slices — a session
+cannot be matched on `at` (optional) or on `title` (not unique within a day).
+
+⚠️ **The Today screen carries the day; it does not carry `note`.** The artifact prints `note` inside
+its own day card, so the two look different there on purpose — see trap 4 for the two independent
+reasons that field stays refused.
 
 🔴 **The way back is drawn TWICE on purpose** — Telegram's arrow, plus a `Today` chip at the top of
 the week and again at its foot. That looks like the redundancy the design system tells you to cut,

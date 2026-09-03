@@ -80,6 +80,11 @@ const STATUS_WORDS = {
   skipped_by_design: "skipped",
 };
 
+/** A session's address inside the payload: the day it is on, and its position in that day. */
+function sessionKey(date, index) {
+  return `${date}#${index}`;
+}
+
 /**
  * THE WHOLE WEEK, for the second screen -- classified against the request's own clock, which is
  * the same rule the Now slot follows and for the same reason: the payload carries seven days, and
@@ -104,8 +109,14 @@ function buildWeek(meta, days, today) {
   }
 
   const weekDays = days.map((day) => {
-    const sessions = (day.sessions ?? []).map((s) => ({
+    const sessions = (day.sessions ?? []).map((s, i) => ({
       ...s,
+      // THE SAME SESSION, NAMED THE SAME WAY IN BOTH SLICES. The Now slot copies a session out of
+      // the payload and the week copies it again, so the two objects are never `===` and there is
+      // nothing else to match on: `at` is optional, and two sessions on one day can share a title.
+      // `date#index` is stable because both slices walk the same array in the same order, and it
+      // is what lets the Today screen list the day IN FULL without drawing the hero card twice.
+      key: sessionKey(day.date, i),
       // An unrecognised status prints ITSELF rather than being swallowed: a word nobody planned
       // for is still information, and hiding it is how a new upstream state goes unnoticed. The
       // underscores come out, because `skipped_by_design` on screen is a name that only makes
@@ -194,6 +205,7 @@ export function buildView(payload, nowMs) {
     // has become a number in the past, so the app stops shouting it.
     inProgress: false,
     laterCount: 0,
+    afterToday: { next: null, more: 0 },
     emptyReason: null,
     // The second screen. Built unconditionally, because the week is worth reading on exactly the
     // days the Now slot has nothing to say -- a rest day, or an evening when everything is done.
@@ -206,9 +218,13 @@ export function buildView(payload, nowMs) {
   const upcoming = [];
   for (const day of days) {
     if (!window.has(day.date)) continue;
-    for (const s of day.sessions ?? []) {
+    const sessions = day.sessions ?? [];
+    for (let i = 0; i < sessions.length; i++) {
+      const s = sessions[i];
       if (!ACTIONABLE.has(s.status)) continue;
-      upcoming.push({ ...s, date: day.date, dow: day.dow ?? "", startMs: parseSgt(s.at) });
+      upcoming.push({
+        ...s, date: day.date, dow: day.dow ?? "", startMs: parseSgt(s.at), key: sessionKey(day.date, i),
+      });
     }
   }
 
@@ -261,6 +277,19 @@ export function buildView(payload, nowMs) {
   view.next = ahead[1] ?? null;
   view.inProgress = Boolean(view.now && view.now.startMs !== null && view.now.startMs <= nowMs);
   view.laterCount = Math.max(0, ahead.length - 2);
+
+  // WHAT IS LEFT IN THE WINDOW ONCE TODAY AND THE NOW CARD ARE ACCOUNTED FOR. The Today screen
+  // lists today in full, so `next` is the wrong thing to put under that list: on most days it is a
+  // row the list already carries, and printing it again is the largest duplication a screen this
+  // short can make. What the reader cannot see from the list is the two days AFTER today.
+  //
+  // BOTH EXCLUSIONS ARE LOAD-BEARING, and the second is the one that is easy to miss. On a day
+  // whose plan is entirely spent the Now card moves on to TOMORROW -- so a filter on the date alone
+  // hands back the session already standing in the largest type on the screen, and the day the
+  // reader is looking at ends with its own headline printed twice. `ahead[0]` is the Now card, so
+  // dropping it first is the whole fix.
+  const rest = ahead.slice(1).filter((s) => s.date > today);
+  view.afterToday = { next: rest[0] ?? null, more: Math.max(0, rest.length - 1) };
 
   if (!view.now) {
     if (days.length === 0) view.emptyReason = "empty";
