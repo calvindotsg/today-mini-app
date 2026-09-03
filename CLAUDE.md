@@ -10,7 +10,7 @@ cost a session.
 
 | Task | Command |
 |---|---|
-| Test | `npm test` (119 tests) |
+| Test | `npm test` (125 tests) |
 | Auth suite only | `npm run test:auth` |
 | Dev server | `npm run dev` |
 | Deploy | `npm run deploy` — CI also does this on merge to `main`, **behind an approval** (trap 2) |
@@ -33,7 +33,7 @@ a Claude session ──► scripts/publish.mjs ──► Cloudflare KV ──►
 | `src/view.js` | payload + a clock → what the two screens show. Pure, no DOM. |
 | `src/app.html` | Both screens, in the calvin.sg design system. Templated per request with a CSP nonce. |
 | `src/notify.js` | the published payload → the **summary envelope** the Hermes box is sent on a successful `--put`. A named subset picked field by field, never a spread — the artifact grows fields without notice, and a spread would ship each new one to a second machine the week it appeared. |
-| `scripts/publish.mjs` | The publisher, and **two content gates**: a refusal on raw markup in any published field, and a warning on anything that reads like a revision of an earlier plan. |
+| `scripts/publish.mjs` | The publisher, and **five content gates**. Refusals: raw markup in a published field; a **wiki path or forecast id** (`models/pace-group`, `F-2026-09-04-a`) — bookkeeping he cannot open; an **abbreviation not spelled out**, satisfied by saying it in full in the same field. Warnings: anything reading like a revision of an earlier plan, and this store's **private vocabulary** (*board*, *anchor*, *dial*). 🔴 The split is the design — an exact shape may refuse, an English guess may only warn. |
 | `CONTRACT.md` | The `week-state` shape, **measured** rather than specified. Read before changing `reduce.js`. |
 
 **Two screens, one document.** `Today` answers the 6am question and is what the app opens on; `The

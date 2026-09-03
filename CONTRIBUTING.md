@@ -26,7 +26,7 @@ exercise every auth path.
 
 | Command | What it does |
 | --- | --- |
-| `npm test` | The whole suite, 119 tests |
+| `npm test` | The whole suite, 125 tests |
 | `npm run test:auth` | Just the HTTP auth suite, against the real Worker in the real runtime |
 | `npm run dev` | `wrangler dev` on the emulated KV |
 | `npm run deploy` | Ships to `today.calvin.sg`. CI does this on merge — see below |
