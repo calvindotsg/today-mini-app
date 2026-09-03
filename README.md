@@ -134,7 +134,7 @@ own `initData` against it, so every auth path is exercised without a real creden
 
 | Command | What it does |
 | --- | --- |
-| `npm test` | The whole suite, 119 tests |
+| `npm test` | The whole suite, 125 tests |
 | `npm run test:auth` | Just the HTTP auth suite, against the real Worker in the real runtime |
 | `npm run dev` | `wrangler dev` on an emulated KV |
 | `npm run deploy` | Ships to `today.calvin.sg` — CI also does this on merge |
@@ -262,7 +262,7 @@ npm test          # 91 tests
   at 00:05 Singapore time**, which a UTC comparison gets wrong every morning for eight hours, and
   **an unknown key inside `bed`**, which the allowlist has to drop even though `pick` does not
   recurse. Each was checked by breaking the code it guards and watching it fail.
-- `test/publish.test.mjs` — the publisher's two content gates, by running the publisher.
+- `test/publish.test.mjs` — the publisher's five content gates, by running the publisher.
 - `test/notify.test.mjs` — the envelope, and the wiring that sends it. The wiring half runs the
   real `--put` path with **`npx` and `ssh` shimmed onto `PATH`**, so the publisher genuinely
   spawns something, pipes the envelope into it and reads its exit code — only the far end is

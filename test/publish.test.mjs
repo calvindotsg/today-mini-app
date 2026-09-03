@@ -176,3 +176,94 @@ test("every form of real markup is still caught", () => {
     assert.equal(r.code, 1, `let markup through: ${JSON.stringify(markup[i])}`);
   }
 });
+
+// ── plain English, added 2026-09-03 ─────────────────────────────────────────────────────────
+//
+// Calvin read Friday's reason on his own phone and said it was "too technical which i don't
+// understand". The field cited a wiki page and a forecast id -- truthfully, and uselessly, because
+// he cannot open either. These gates are that complaint turned into a command.
+//
+// 🔴 THE SPLIT IS THE DESIGN, and it is the same split the two older gates already draw: a wiki
+// path and a dated forecast id have EXACT SHAPES, so they can be refused; "board" and "anchor" are
+// ordinary English words with a private meaning, so they only warn. A gate that fires wrongly gets
+// switched off, and this file already carries the `<TBA>` scar to prove it.
+
+test("a wiki page path is refused, and the field is named", () => {
+  const ws = weekState();
+  ws.days[0].sessions[0].intention = "The observation models/pace-group asked for on 2 Sep.";
+  const r = publish(ws, "store-ref-wiki");
+
+  assert.equal(r.code, 1, "a path into the store that wrote the plan must not reach the phone");
+  assert.match(r.err, /cite the store rather than the fact/);
+  assert.match(r.err, /days\[0\]\.sessions\[0\]\.intention/, "and it must say WHICH field");
+});
+
+test("a forecast id is refused too", () => {
+  const ws = weekState();
+  ws.days[0].sessions[0].intention = "Pre-registered as F-2026-09-04-a before the run.";
+  const r = publish(ws, "store-ref-forecast");
+  assert.equal(r.code, 1, "a forecast id is bookkeeping, not a reason to run");
+  assert.match(r.err, /cite the store/);
+});
+
+// 🔴 THE ESCAPE HATCH IS WHAT MAKES THE REFUSAL SAFE. A refusal with no way out gets weakened; this
+// one is satisfied by doing the thing that was asked for -- saying the words.
+test("an abbreviation is refused bare and accepted once it is spelled out", () => {
+  const bare = weekState();
+  bare.days[0].sessions[0].intention = "The MAS test at 110%, recorded in full.";
+  const a = publish(bare, "acronym-bare");
+  assert.equal(a.code, 1, "a bare abbreviation must not publish");
+  assert.match(a.err, /without spelling it out/);
+  assert.match(a.err, /MAS/);
+
+  const spelled = weekState();
+  spelled.days[0].sessions[0].intention =
+    "The Maximal Aerobic Speed test (MAS) at 110%, recorded in full.";
+  const b = publish(spelled, "acronym-spelled");
+  assert.equal(b.code, 0, "naming it in full in the same field is the way through: " + b.err);
+});
+
+// 🔴 THE FALSE-POSITIVE CONTROL, and the reason the keys are matched case-sensitively on word
+// boundaries. `MAS` inside "body mass" and `RE` inside "recovery" are real strings from real weeks
+// -- the scan I ran by hand on 2026-09-03 flagged "Evolt body mass" and I had to discard it as
+// noise. A gate that does that on every publish is one the operator learns to ignore.
+test("ordinary words that merely contain an abbreviation do not refuse the week", () => {
+  const prose = [
+    "54.0 kg body mass, 48.5 kg lean mass",   // MAS
+    "recovery cut from 20 s to 15 s",         // RE
+    "the pack rides away",                    // PB, ARC
+    "Kallang, then the park connector",       // PE, ECP
+    "read the board and hold it",             // BTT/RD as substrings
+    "arc of the bend at 4 km",                // ARC lowercase
+  ];
+  for (let i = 0; i < prose.length; i++) {
+    const ws = weekState();
+    ws.days[0].sessions[0].place = prose[i];
+    const r = publish(ws, `acronym-fp-${i}`);
+    assert.equal(r.code, 0, `refused ordinary prose ${JSON.stringify(prose[i])}: ${r.err}`);
+  }
+});
+
+// ⚠️ A WARNING, NEVER A REFUSAL. "the board" is a pace sign here and a plank of wood everywhere
+// else; the gate says so and gets out of the way.
+test("the store's private vocabulary warns loudly, and still publishes", () => {
+  const ws = weekState();
+  ws.days[0].sessions[0].intention = "The first board faster than your easy anchor.";
+  const r = publish(ws, "vocabulary");
+
+  assert.equal(r.code, 0, "an English guess must not block the week");
+  assert.match(r.out, /private vocabulary/);
+  assert.match(r.out, /Not a refusal/);
+});
+
+test("a plainly-written week trips none of the three new gates", () => {
+  const ws = weekState();
+  ws.days[0].sessions[0].intention =
+    "Your only run at race pace before Kiprun. Say the pace out loud to Bryan before you start.";
+  const r = publish(ws, "plain");
+
+  assert.equal(r.code, 0, r.err);
+  assert.equal(r.out.includes("private vocabulary"), false);
+  assert.equal(r.err.includes("cite the store"), false);
+  assert.equal(r.err.includes("spelling it out"), false);
+});

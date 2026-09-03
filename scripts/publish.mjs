@@ -129,6 +129,62 @@ const MARKUP = new RegExp(`<\\/?(?:${TAGS})\\b[^>]*>|&(?:${ENTITIES}|#\\d+);`, "
 // specific.
 const REVISION = /\b(?:corrected|rewritten|earlier version|first version|i had wrong|previously stated|was wrong|no longer true)\b/i;
 
+// 🔴 REFUSAL. A REFERENCE INTO THE STORE THAT WROTE THE PLAN. Added 2026-09-03, after Calvin read
+// his own phone and said the reason for Friday's run was "too technical which i don't understand".
+// The field said, truthfully: "the discriminating observation models/pace-group asked for in
+// writing on 2 Sep ... Pre-registered as F-2026-09-04-a."
+//
+// `models/pace-group` is a WIKI PAGE and `F-2026-09-04-a` is a FORECAST ID. He cannot open either,
+// does not know they exist, and neither survives the trip to a phone. Unlike the vocabulary gate
+// below, this is a fact about syntax rather than a guess at English: a slash-joined wiki path and a
+// dated forecast id have exact shapes that do not occur in training prose. Precise enough to
+// refuse, and the recourse is to say the fact instead of citing where it is filed.
+const STORE_REF = /\b(?:models|athlete|goals|forecasts|programmes|raw|published)\/[a-z0-9][a-z0-9-]*|\bF-\d{4}-\d{2}-\d{2}[a-z]?\b/;
+
+// 🔴 REFUSAL, AND IT IS SAFE TO REFUSE BECAUSE THERE IS ALWAYS A WAY OUT: spell the thing in full.
+// Asked for by name on 2026-09-03 — "Avoid Acronyms as i might not know what it means, spell out in
+// full instead — like MAS (Maximal aerobic speed)".
+//
+// ⚠️ Each entry carries its OWN escape hatch: the abbreviation is only refused when its expansion
+// is absent from the SAME string. So "NRIC — your identity card" publishes and a bare "NRIC" does
+// not, which is the behaviour asked for rather than a ban on capital letters.
+//
+// ⚠️ The keys are matched CASE-SENSITIVELY and on word boundaries, which is doing real work: `MAS`
+// against "body mass" and `RE` against "recovery" are exactly the false positives that would make
+// this gate fire wrongly, and a gate that fires wrongly gets switched off.
+//
+// 📌 Every expansion is a FACT taken from the wiki that owns it — programmes/arc.md is titled
+// "ASICS Run Club", rd.md "Running Department", grc.md "Garmin Run Club Singapore", kcc.md "Kröl
+// Cycling Club", lcrr.md "Lion City Road Runners", bft.md gives "Body Fit Training". An
+// abbreviation whose expansion is NOT recorded in that store does not belong on this list: guessing
+// one would publish a fabricated fact, which is worse than a short name he already knows.
+// A studio class code (`Pump UB 275`, `XTX 187`) is a NAME, not an abbreviation — bft.md records
+// that nothing has ever said what they stand for — so they are deliberately absent here.
+const ACRONYMS = [
+  ["MAS", /maximal aerobic speed/i],
+  ["HRV", /heart[ -]rate variability/i],
+  ["RE", /relative effort/i],
+  ["PE", /perceived exertion/i],
+  ["5RM", /5[ -]rep max|most you can lift 5 times/i],
+  ["PB", /personal best/i],
+  ["BTT", /basic theory test/i],
+  ["ECP", /east coast park/i],
+  ["NRIC", /identity card/i],
+  ["BFT", /body fit training/i],
+  ["ARC", /asics run club/i],
+  ["RD", /running department/i],
+  ["GRC", /garmin run club/i],
+  ["KCC", /kr(?:ö|oe)l cycling club/i],
+  ["LCRR", /lion city road runners/i],
+];
+
+// ⚠️ WARNING, NOT REFUSAL, and the split from the two refusals above is the whole design. These are
+// ordinary English words this store happens to use in a private sense — "board" for a pace sign,
+// "anchor" for an easy pace, "dial" for something adjustable. A word cannot be refused on the
+// strength of a meaning it only sometimes has: "dial" is inside "dialled", "the sign" is a
+// perfectly plain thing to write, and refusing either would block a correct plan. So this prints.
+const VOCABULARY = /\b(?:easy anchor|the board|a board|pace board|discriminating|compression|constant bias|measured bias|two-regime|regime|confound|provenance|the dial|dials|MAE|n=\d)\b/i;
+
 /** Every string in the payload, with the path it sits at, so a refusal can name the field. */
 function* strings(node, path = "") {
   if (typeof node === "string") { yield [path, node]; return; }
@@ -185,9 +241,21 @@ if (!probe.ok) {
 
 const markup = [];
 const revisions = [];
+const storeRefs = [];
+const acronyms = [];
+const vocabulary = [];
 for (const [path, s] of strings(payload)) {
   if (MARKUP.test(s)) markup.push([path, s]);
   if (REVISION.test(s)) revisions.push([path, s]);
+  if (STORE_REF.test(s)) storeRefs.push([path, s]);
+  if (VOCABULARY.test(s)) vocabulary.push([path, s]);
+  for (const [abbr, expansion] of ACRONYMS) {
+    // Case-sensitive, on a word boundary, and only when the string does not already say it in
+    // full. `\b` around a key ending in a digit still behaves: "5RM" borders a space either side.
+    if (new RegExp(`(?:^|[^A-Za-z0-9])${abbr}(?![A-Za-z0-9])`).test(s) && !expansion.test(s)) {
+      acronyms.push([path, abbr, s]);
+    }
+  }
 }
 
 if (revisions.length > 0) {
@@ -197,6 +265,34 @@ if (revisions.length > 0) {
   console.log("          each of these is what the week IS rather than what it USED to be:");
   for (const [path, s] of revisions) console.log(`          ${path}: ${s.slice(0, 110)}`);
   console.log("          Not a refusal — this test reads English, and it can be wrong.");
+}
+
+if (vocabulary.length > 0) {
+  console.log("");
+  console.log(`warning   ${vocabulary.length} field(s) use this store's private vocabulary.`);
+  console.log("          These are ordinary words with a meaning only the wiki knows. He reads them");
+  console.log("          at 6am having read nothing else. Say the thing itself instead:");
+  for (const [path, s] of vocabulary) console.log(`          ${path}: ${s.slice(0, 110)}`);
+  console.log("          Not a refusal — this test reads English, and it can be wrong.");
+}
+
+if (storeRefs.length > 0) {
+  console.error("");
+  console.error(`REFUSED: ${storeRefs.length} published field(s) cite the store rather than the fact.`);
+  console.error("A wiki page path or a forecast id is bookkeeping. He cannot open it, does not know");
+  console.error("it exists, and it does not survive the trip to a phone. State the fact it holds --");
+  console.error("do not delete the sentence, and do not loosen this gate.");
+  for (const [path, s] of storeRefs) console.error(`  ${path}: ${s.slice(0, 110)}`);
+  process.exit(1);
+}
+
+if (acronyms.length > 0) {
+  console.error("");
+  console.error(`REFUSED: ${acronyms.length} published field(s) use an abbreviation without spelling it out.`);
+  console.error("Write it in full. The expansion is a FACT, so take it from the wiki page that owns");
+  console.error("it -- never invent one. Saying it in full anywhere in the same field satisfies this.");
+  for (const [path, abbr, s] of acronyms) console.error(`  ${path}: ${abbr} — ${s.slice(0, 100)}`);
+  process.exit(1);
 }
 
 if (markup.length > 0) {
