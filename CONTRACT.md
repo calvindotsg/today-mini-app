@@ -21,6 +21,14 @@ Measured from:
 | **A** | the live **plan** page | 24–30 Aug 2026 |
 | **B** | a **closeout** page | 17–23 Aug 2026 |
 | **C** | a **plan** page, measured 2026-09-01 | 31 Aug – 6 Sep 2026 |
+| **D** | **the same page as C**, re-measured 2026-09-03 after two mid-week reconciles | 31 Aug – 6 Sep 2026 |
+
+🔴 **D is the first measurement of the same document twice, and it is the one that shows the table
+is not stable within a single week.** C and D are the same artifact URL: 20 sessions became 24, and
+the fields moved in both directions — `numbers` 9/20 → 11/24, `until` 2/20 → 4/24, and `leaveBy`
+**4/20 → 1/24**. Reconciling a week does not merely flip statuses; it rewrites sessions, and a field
+that was there on Monday can be gone by Thursday. **Read every row below as a sample, never as a
+floor.**
 
 The artifacts are private pages on the account that publishes them, so they are identified here by
 shape rather than by id. Nothing below depends on being able to open them — the table is
@@ -61,6 +69,15 @@ stamps its own `generatedAt` at publish time rather than trusting the artifact t
 `weekStart`/`weekEnd` are `YYYY-MM-DD` in both and are the only fields that can answer *"does
 this plan cover today?"*. They are required by `reduce.js` for exactly that reason.
 
+⚠️ **Two allowlisted meta fields are published and rendered NOWHERE — `bydDate` and `lastUpdated`.**
+Audited 2026-09-03 by matching `META_FIELDS` against every read in `view.js`, `app.html` and
+`notify.js`. `kiprunDate` looks the same at a glance and is **not** in this category: `view.js` turns
+it into `daysToKiprun` and the week screen prints the countdown. `lastUpdated` is superseded by
+`generatedAt`, which `publish.mjs` stamps at publish time — see the note above on why the app dates
+itself. They are two short strings and are left on the allowlist deliberately, because the list
+gates what *may* cross rather than what must; but **a session filling `bydDate` and expecting to see
+it is filling nothing**, which is the "published but unread" trap `CLAUDE.md` names.
+
 ## `days[]`
 
 Always 7 entries in all three. Present in all: `date` (`YYYY-MM-DD`), `dow`, `sessions`.
@@ -83,22 +100,28 @@ naming `bed` alone would publish every key the artifact ever adds to it.
 
 **Three fields are always present. Everything else is optional.**
 
-| field | A | B | C |
-|---|---|---|---|
-| `kind` | 20/20 | 17/17 | 20/20 |
-| `title` | 20/20 | 17/17 | 20/20 |
-| `status` | 20/20 | 17/17 | 20/20 |
-| `at` | 14/20 | 15/17 | 18/20 |
-| `until` | 14/20 | 15/17 | **2/20** |
-| `place` | 14/20 | 15/17 | 7/20 |
-| `leaveBy` | **13/20** | **0/17** | **4/20** |
-| `travel` | 13/20 | 0/17 | 4/20 |
-| `intention` | 17/20 | 14/17 | 11/20 |
-| `oneRule` | 17/20 | 5/17 | 9/20 |
-| `numbers` | 17/20 | 12/17 | 9/20 |
-| `bring` | **5/20** | **0/17** | 2/20 |
-| `sport` | — | — | 7/20 |
-| `note` | — | — | 6/20 |
+| field | A | B | C | D | where it lands |
+|---|---|---|---|---|---|
+| `kind` | 20/20 | 17/17 | 20/20 | 24/24 | both screens |
+| `title` | 20/20 | 17/17 | 20/20 | 24/24 | both screens |
+| `status` | 20/20 | 17/17 | 20/20 | 24/24 | both screens |
+| `at` | 14/20 | 15/17 | 18/20 | 23/24 | both screens |
+| `until` | 14/20 | 15/17 | **2/20** | **4/24** | both screens |
+| `place` | 14/20 | 15/17 | 7/20 | 9/24 | both screens |
+| `leaveBy` | **13/20** | **0/17** | **4/20** | **1/24** | the big number |
+| `travel` | 13/20 | 0/17 | 4/20 | 1/24 | both screens |
+| `intention` | 17/20 | 14/17 | 11/20 | 14/24 | both screens |
+| `oneRule` | 17/20 | 5/17 | 9/20 | 10/24 | both screens |
+| `numbers` | 17/20 | 12/17 | 9/20 | 11/24 | both screens |
+| `bring` | **5/20** | **0/17** | 2/20 | 3/24 | both screens |
+| `sport` | — | — | 7/20 | 8/24 | both screens |
+| `note` | — | — | 6/20 | 6/24 | **not published** |
+
+⚠️ **"Where it lands" changed on 2026-09-03 and is the reason this column exists.** The Today screen
+used to render a subset; it now draws today with everything the week screen draws it with, by
+calling the same row and bed renderers. So **every optional field above is now read at 6am**, not
+only on a screen opened deliberately — and a field left out is a gap on the primary screen rather
+than on the secondary one.
 | `actual` | 10/20 | 12/17 | — |
 | `spec` | 20/20 | 4/17 | — |
 | `why` | 20/20 | 9/17 | — |
@@ -110,9 +133,18 @@ naming `bed` alone would publish every key the artifact ever adds to it.
 | `link` | 2/20 | 0/17 | — |
 | `machines` | 1/20 | 0/17 | — |
 
-🔴 **`leaveBy` — the field this whole app is built around — reads 13/20, 0/17 and 4/20 across the
-three.** The app falls back to `at`, and to no clock at all when there is neither. A design that
-assumes it is wrong on the first rest day. Three independent measurements now say so.
+🔴 **`leaveBy` — the field this whole app is built around — reads 13/20, 0/17, 4/20 and 1/24 across
+the four.** The app falls back to `at`, and to no clock at all when there is neither. A design that
+assumes it is wrong on the first rest day. Four independent measurements now say so.
+
+🔴 **D localises WHY, and it is not that the departure time is unknown.** The one `leaveBy` in the
+live week is on Sunday's ride. Friday has a 06:15 class in Yishun and a 09:15 booked test in
+Woodlands, and the artifact's own prose computes the trip in a table — *"leave 07:45, arrive 08:42
+at the routing's best"* — while that session's `oneRule` reads **"Out of the door by 07:45."**
+The arithmetic exists, it is correct, and it is **trapped in prose and in a rule string**, which is
+exactly the failure `references/week-state.md` warns about in the skill that writes these. It is not
+a contract problem and `reduce.js` cannot fix it: a `leaveBy` nobody emitted is indistinguishable
+from one that is genuinely unknowable.
 
 ⚠️ **`until` moved the most: 14/20, 15/17, then 2/20.** It is what decides how long a started
 session holds the Now slot, which is why `IN_PROGRESS_GRACE_MINUTES` exists as a fallback rather
