@@ -205,6 +205,11 @@ test("render boots the screen from the deep link, and only when there is a week"
     "and the URL copy must still be the fallback");
   assert.match(APP, /setBackButton\(screen === "week"\)/,
     "a launch that opens on the week must light the back arrow, or the reader is stranded there");
-  assert.match(APP, /root\.setAttribute\("aria-label", screen === "week" \? "The week" : "Today"\)/,
+  // The screen is named "Week" rather than "The week" -- shortened across the tab, the heading
+  // and this landmark together, because Apple's tab-bar guidance is to "use single words whenever
+  // possible" and the design system's own rule is that a control and its destination are one
+  // string. All three moved in the same commit; this assertion is what would have caught it if
+  // only two of them had.
+  assert.match(APP, /root\.setAttribute\("aria-label", screen === "week" \? "Week" : "Today"\)/,
     "the landmark must name the screen actually painted");
 });
