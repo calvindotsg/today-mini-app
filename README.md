@@ -105,6 +105,35 @@ data**. `POST /s` returns the week as JSON to a validated launch and 401-empty t
 The defensible property is *no user data without auth*, and a test asserts it against distinctive
 values seeded into the store rather than against a guess at what the real content looks like.
 
+## The second way in
+
+Telegram is the way I open this. It is not the only way I should be *able* to. `today.calvin.sg/web/`
+serves the same page to an ordinary browser, and installs to an iPhone home screen as
+**My training plan**.
+
+[Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/) answers *who are you*, once,
+at one path. The Worker then mints its own signed first-party cookie and answers *are you still you*
+on every request after it — so the installed app never leaves the origin again.
+
+**That split is forced by iOS, and it is the whole design.** A home-screen web app has its own cookie
+jar, no address bar, no reload button and no back button. A login that has to bounce off to another
+origin on every cold start is a login that can strand the app with nothing to tap. So Access guards
+exactly one path, visited at setup and at recovery and never in normal use, and `GET /web/` answers
+200 in every authentication state — logged out it serves the same document with no plan in it and
+draws a *Sign in* control.
+
+Before any of it was written, the one assumption it all rested on was **measured on the actual
+phone**: does a standalone app keep a cookie that arrives on the return leg of an off-origin
+redirect? A throwaway page with two arms — one hopping off-origin and back, one setting a cookie
+directly so a failure could not be confused with "standalone keeps no cookies at all" — said yes.
+A decade of public writing about web apps and single sign-on on iOS says it should have said no. That
+writing is from iOS 11 to 13 and no longer describes the device. Measuring cost fifteen minutes and
+saved building a whole pairing mechanism for a problem that is not there.
+
+Two gates, not one, on this side as well: Cloudflare refuses everyone else at the edge, and the
+Worker re-checks the identity itself on every request. If the Access application were ever deleted
+from the dashboard, a Worker that trusted the perimeter would start handing out month-long sessions.
+
 ## Tech stack
 
 A [Cloudflare Worker](https://developers.cloudflare.com/workers/) with a
