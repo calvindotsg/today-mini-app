@@ -40,6 +40,12 @@
     - THIS PAGE IS THE DONOR. weekly-training-plan's design-system reference sends every plan
       artifact here to lift the palette, because it is the same system already shaped for an
       embedded page. A defect here is copied into next week's artifact.
+
+  THE ONE ELEVATED SURFACE IS THE NAVIGATION. Everything else on this page lies flat on the
+  ground: no plate, no shadow, no second floating layer. The design system spends its offset
+  plate on a CONTROL's affordance, and the cards here are inert -- so a plated card was
+  signalling "press me" on something with nothing to press. A BORDER marks an aside: the banner
+  is a statement ABOUT the plan, and `After today` is a different day. The plan itself is unboxed.
 -->
 <style nonce="__NONCE__">
 /* ── palette, block 1 of 3: bare :root. Light, and the un-stamped default. ──────────────── */
@@ -88,6 +94,20 @@
   --fill:   color-mix(in srgb, var(--text)  6%, transparent);
   --radius-card:.5rem; --plate:2px 2px 0 var(--shadow);
   --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+
+  --nav-h:3.5rem;
+
+  /* !! BOTH TERMS ARE LOAD-BEARING, AND EACH IS DEAD IN THE RUNTIME THE OTHER IS ALIVE IN.
+     Inside Telegram's iOS webview `env(safe-area-inset-bottom)` resolves to 0 -- measured, and
+     open upstream as Telegram-iOS#1377 -- so the real inset can only arrive over the bridge, as
+     `safe_area_changed`, which the script below writes into --sa-bottom. In a plain browser and
+     in a home-screen web app there is NO bridge, --sa-bottom is never set, and env() is the only
+     thing that knows about the home indicator.
+     So: do not "simplify" this to one term. Whichever runtime you happen to be testing in, the
+     other term looks redundant and deleting it puts the navigation under the home indicator on
+     every device that uses the half you removed. The floor keeps the pill off the screen edge
+     where both are zero. */
+  --nav-inset:max(var(--sa-bottom, 0px), env(safe-area-inset-bottom), 0.5rem);
 }
 
 *{box-sizing:border-box}
@@ -95,60 +115,89 @@ html{-webkit-text-size-adjust:100%}
 body{
   margin:0; background:var(--background); color:var(--text);
   font-family:var(--sans); font-size:1rem; line-height:1.5;
-  padding:1.25rem 1rem calc(2rem + env(safe-area-inset-bottom)) 1rem;
+  /* ALL FOUR EDGES, and three of them were missing. The foot clears the floating navigation,
+     which is fixed and therefore out of flow. The other three are the device's own cutouts:
+     `viewport-fit=cover` is set on the viewport meta, which means this page is responsible for
+     the notch and the rounded corners rather than the browser.
+     Inside Telegram this never bit -- its webview sits below the status bar, so the top inset
+     resolves to 0 and the omission was invisible. The same document served as a home-screen web
+     app owns the whole screen, and there the header renders under the Dynamic Island.
+     `max()` rather than a bare env() so the page keeps its own margin where the inset is 0,
+     which is the same floor-not-fallback shape --nav-inset uses. */
+  padding-top:max(1.25rem, env(safe-area-inset-top));
+  padding-right:max(1rem, env(safe-area-inset-right));
+  padding-left:max(1rem, env(safe-area-inset-left));
+  padding-bottom:calc(var(--nav-h) + var(--nav-inset) + 1.5rem);
   /* 320 px is the floor this must work at. Everything below sizes off the viewport, never a
      fixed width, and the one long-word field (place) gets an explicit break. */
   max-width:34rem; margin-inline:auto;
 }
+
+/* THE ONLY TWO PLACES A TRACKED-OUT CAPITAL RUN SURVIVES. It was on eleven, across the week
+   label, every card's kind, the clock's own label, both definition terms and the why block --
+   which is a capital run above almost every group on the screen, and the commonest thing that
+   makes a considered page read as a generated one. The rule that replaced it: `.mc` is for a
+   short word that labels a value INLINE and would otherwise be read as the value. Everything
+   else carries its hierarchy with size, weight and colour off the ramp. */
 .mc{font-size:.625rem; font-weight:700; letter-spacing:.14em; text-transform:uppercase}
 
-header{display:flex; flex-wrap:wrap; gap:.5rem 1rem; align-items:baseline; margin-bottom:1rem}
-header .week{color:var(--quiet)}
+header{display:flex; flex-wrap:wrap; gap:.25rem 1rem; align-items:baseline; margin-bottom:1.75rem}
+header .week{color:var(--quiet); font-size:.8125rem}
 header .asof{color:var(--quieter); font-size:.75rem; margin-left:auto}
 
 /* The banner is the honesty surface. It appears ONLY when something is actually wrong, so its
-   presence is information -- a banner that is always there is furniture. */
+   presence is information -- a banner that is always there is furniture. It is BOXED because a
+   border here marks an aside: this is a statement about the plan rather than part of it. */
 .banner{
   border:1px solid var(--accent); border-radius:var(--radius-card);
-  background:var(--fill); padding:.75rem .875rem; margin-bottom:1.25rem;
+  background:var(--fill); padding:.75rem .875rem; margin-bottom:1.5rem;
 }
 .banner .mc{color:var(--accent); display:block; margin-bottom:.25rem}
 .banner p{margin:0; font-size:.875rem}
 
-.card{
-  border:1px solid var(--card-border); border-radius:var(--radius-card);
-  background:var(--card-background); padding:1.125rem 1rem; margin-bottom:1rem;
-}
-.card--now{box-shadow:var(--plate)}
-.kind{color:var(--accent); display:block; margin-bottom:.375rem}
+/* ── the hero ──────────────────────────────────────────────────────────────────────────────
+   UNBOXED, AND WITHOUT THE PLATE. It used to be a bordered card wearing `2px 2px 0` -- but the
+   design system spends that offset plate on a CONTROL's one action, and this card has no link
+   and no button in it. A plate here was an affordance drawn on something inert, and a border
+   around the one thing this screen exists to show was a box around the whole page. Standing it
+   on the ground is also what leaves the navigation as the only raised surface. */
+.hero{margin:0 0 1.75rem 0}
+.hero .kind{color:var(--quiet); font-size:.8125rem; display:block; margin-bottom:.25rem}
 h1{font-size:1.375rem; line-height:1.25; margin:0 0 1rem 0; font-weight:600; letter-spacing:-.01em}
 
 /* THE NUMBER. The one element on this screen that has to be readable at arm's length at 6am,
    which is the whole reason the app exists. It scales with the viewport and is capped so it
    cannot wrap at 320 px. */
-.clock{margin:0 0 .875rem 0}
-.clock .label{color:var(--quiet); display:block; margin-bottom:.125rem}
+.clock{margin:0 0 1rem 0}
+.clock .label{color:var(--quiet); display:block; font-size:.9375rem; margin-bottom:.125rem}
 .clock time{
   display:block; font-size:clamp(3rem, 17vw, 4.25rem); line-height:1;
   font-weight:700; letter-spacing:-.03em; font-variant-numeric:tabular-nums;
   color:var(--accent);
 }
-.clock .window{color:var(--quiet); font-size:.8125rem; margin-top:.375rem; display:block}
+/* The window used to read "Sun 7 Sep <middot> 05:30-08:00", joining a date to a span with a
+   glyph. They are two different facts, so they are two columns with space between them and no
+   punctuation doing the work of layout. */
+.clock .window{
+  color:var(--quiet); font-size:.8125rem; margin-top:.5rem;
+  display:flex; flex-wrap:wrap; gap:.15rem 1rem;
+}
+.clock .window .span{font-variant-numeric:tabular-nums}
 
 dl{margin:0; display:grid; grid-template-columns:auto 1fr; gap:.375rem .75rem; align-items:baseline}
-dt{color:var(--quieter); white-space:nowrap}
+dt{color:var(--quieter); white-space:nowrap; font-size:.875rem}
 dd{margin:0; font-size:.9375rem; overflow-wrap:anywhere}
 
-/* The session's figures on the Now card. Same list and same class as a week row -- a figure reads
-   the same on both screens -- with the space the card's other secondary blocks get, and one step of
-   size back: this card has the room, and the numbers are the prescription rather than a footnote.
-   `.figs` itself is declared with the week screen, which is where it is used seven times over. */
-.card--now .figs{margin-top:.875rem}
-.card--now .figs li{font-size:.875rem}
+/* The session's figures on the hero. Same list and same class as a week row -- a figure reads the
+   same on both screens -- with one step of size back: this screen has the room, and the numbers
+   are the prescription rather than a footnote. `.figs` itself is declared with the week screen,
+   which is where it is used seven times over. */
+.hero .figs{margin-top:1rem}
+.hero .figs li{font-size:.875rem}
 
-.rule{border:0; border-top:1px solid var(--hairline); margin:1rem 0}
+.rule{border:0; border-top:1px solid var(--hairline); margin:1.125rem 0}
 .onerule{margin:0; font-size:1rem; line-height:1.45}
-.bring{margin:.75rem 0 0 0; padding:0; list-style:none; display:flex; flex-wrap:wrap; gap:.375rem}
+.bring{margin:.875rem 0 0 0; padding:0; list-style:none; display:flex; flex-wrap:wrap; gap:.375rem}
 .bring li{border:1px solid var(--hairline); border-radius:2px; padding:.125rem .5rem; font-size:.8125rem}
 
 .next{display:flex; flex-wrap:wrap; gap:.25rem .625rem; align-items:baseline}
@@ -156,10 +205,18 @@ dd{margin:0; font-size:.9375rem; overflow-wrap:anywhere}
 .next .what{font-size:.9375rem}
 .later{color:var(--quieter); font-size:.8125rem; margin:.5rem 0 0 0}
 
-.why{color:var(--quiet); font-size:.875rem; line-height:1.55; margin:0}
-.why .mc{display:block; color:var(--quieter); margin-bottom:.25rem}
+.why{color:var(--quiet); font-size:.875rem; line-height:1.55; margin:1.25rem 0 0 0}
+.why b{display:block; color:var(--quieter); font-weight:600; margin-bottom:.25rem}
 
-footer{margin-top:1.5rem; color:var(--quieter); font-size:.6875rem}
+/* A DIFFERENT DAY, and the second of the two things a border marks. Everything belonging to
+   today stands on the ground; this is outside today's window, so it is set apart by a box. */
+.card{
+  border:1px solid var(--card-border); border-radius:var(--radius-card);
+  background:var(--card-background); padding:1.125rem 1rem; margin:1.75rem 0 0 0;
+}
+.card .kind{color:var(--quiet); font-size:.8125rem; display:block; margin-bottom:.5rem}
+
+footer.credit{margin-top:1.75rem; color:var(--quieter); font-size:.6875rem}
 
 :focus-visible{outline:2px solid var(--accent); outline-offset:2px; border-radius:2px}
 /* THE SCREEN CONTAINER IS NOT A CONTROL. Swapping screens moves focus here so a reader driving the
@@ -179,6 +236,10 @@ footer{margin-top:1.5rem; color:var(--quieter); font-size:.6875rem}
    thing on the screen. It sits at the FOOT for the same reason: at 6am the plan is what the
    eye and the keyboard should meet first.
 
+   IT IS ALWAYS DRAWN, ON EVERY CLIENT. Telegram's settings gear is offered as a SHORTCUT to it
+   where the client has one, and is never the only way to reach it -- see `wireSettingsButton`
+   below for why that distinction is the whole lesson of the dead back arrow.
+
    THREE EXCLUSIVE STATES ARE NOT A TOGGLE BUTTON. The site's control reports a pressed state,
    which is right for two; the WAI-ARIA pattern for a set of three is the radio group. These
    are native radios, so the grouping, the checked state and the arrow-key roving are the
@@ -190,7 +251,7 @@ footer{margin-top:1.5rem; color:var(--quieter); font-size:.6875rem}
   position:absolute; width:1px; height:1px; padding:0; margin:0; overflow:hidden;
   clip-path:inset(50%); white-space:nowrap; border:0;
 }
-.chrome{margin-top:1.5rem}
+.chrome{margin-top:2rem}
 .theme{position:relative; display:flex; flex-wrap:wrap; gap:.5rem; border:0; margin:0; padding:0; min-inline-size:0}
 /* THE SURFACE IS SHARED; THE STATE MACHINE IS NOT. `.chip` here is the navigation control between
    the two screens, and it wears the same quiet box as a theme option because the site's vocabulary
@@ -253,25 +314,179 @@ footer{margin-top:1.5rem; color:var(--quieter); font-size:.6875rem}
   }
 }
 
+/* ── the navigation ────────────────────────────────────────────────────────────────────────
+   THE ONE PIECE OF CHROME THAT FLOATS, and the only raised surface on the page. It replaced
+   three scroll-dependent controls: a chip below the whole plan that got you INTO the week, and
+   two more at the head and foot of the week that got you back out. All three could be off
+   screen at the moment they were wanted.
+
+   IT IS NOT CONDITIONAL ON THE BRIDGE, and that is the point rather than an implementation
+   detail. Telegram's back arrow was once the only way off the week on clients that could draw
+   it -- and on a real iPhone it rendered, did nothing, and left the screen a dead end. A way
+   back does not get to depend on something that can lie about working. This bar is drawn by
+   this page, from this page's own data, and is on screen at every scroll position.
+
+   NOT THE ARIA TABS PATTERN. `role="tablist"` here and `role="tabpanel"` on #root would have
+   been correct as a widget and wrong as a document: an explicit role REPLACES the host
+   language's own, so the page would have lost both its nav landmark and its main landmark to
+   describe a two-item switcher. Two buttons and `aria-current` say the same thing and cost no
+   landmark, no roving tabindex and no activation model. */
+.navbar{
+  position:fixed; left:0; right:0; bottom:var(--nav-inset);
+  display:flex; justify-content:center;
+  /* The bar spans the viewport so the pill can centre in it, but only the pill is a target --
+     without this the invisible half of the bar eats taps meant for the page behind it. */
+  pointer-events:none; z-index:10;
+  padding:0 1rem;
+}
+/* ── the material: STOCK APPLE, NOT THIS SITE'S SYSTEM ─────────────────────────────────────
+   The bar below is the one thing on this page drawn in the platform's own language rather than
+   calvin.sg's, and that is a decision rather than a drift. Everything else here is flat, has a
+   hairline at a fraction of the ink, and carries no shadow; a Liquid Glass tab bar is
+   translucent, has a specular rim, a separation shadow and a tinted selection capsule, and it
+   is none of those things by accident. Mapping it onto the fifteen tokens produced something
+   that was neither -- so it is drawn in Apple's values instead.
+
+   THIS IS THE ONLY BLOCK ON THE PAGE ALLOWED RAW COLOUR. They are the system's own material
+   and label values, they are not part of this site's palette, and they must not leak: nothing
+   outside `.navbar` may reference them, and no token here may be reused elsewhere. The three
+   palette blocks at the top of this file remain the whole of the design system, which is what
+   keeps this page usable as the donor every weekly artifact lifts from.
+
+   THE THEME STATES ARE THE PAGE'S OWN THREE, restated for exactly the same reason: light with
+   nothing stamped, the OS preference, and an explicit stamp that must beat the media query.
+   Apple's dark material is not its light material darkened -- the rim goes from near-opaque
+   white to a faint one, and the shadow roughly quadruples. */
+.navbar{
+  --tab-material:rgba(255,255,255,.72);
+  --tab-edge:rgba(0,0,0,.08);
+  --tab-rim:rgba(255,255,255,.75);
+  --tab-shadow:0 6px 24px rgba(0,0,0,.12), 0 1px 3px rgba(0,0,0,.08);
+  --tab-label:rgba(60,60,67,.6);
+  --tab-selected:rgba(120,120,128,.16);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme=light]) .navbar{
+    --tab-material:rgba(28,28,30,.72);
+    --tab-edge:rgba(255,255,255,.12);
+    --tab-rim:rgba(255,255,255,.14);
+    --tab-shadow:0 6px 24px rgba(0,0,0,.55), 0 1px 3px rgba(0,0,0,.4);
+    --tab-label:rgba(235,235,245,.6);
+    --tab-selected:rgba(120,120,128,.32);
+  }
+}
+:root[data-theme=dark] .navbar{
+  --tab-material:rgba(28,28,30,.72);
+  --tab-edge:rgba(255,255,255,.12);
+  --tab-rim:rgba(255,255,255,.14);
+  --tab-shadow:0 6px 24px rgba(0,0,0,.55), 0 1px 3px rgba(0,0,0,.4);
+  --tab-label:rgba(235,235,245,.6);
+  --tab-selected:rgba(120,120,128,.32);
+}
+
+.navbar .pill{
+  pointer-events:auto;
+  display:inline-flex; gap:.125rem; padding:.25rem;
+  border-radius:999px;
+  background:var(--tab-material);
+  /* A hairline edge and a specular rim are two different things and both are the material:
+     the edge separates the capsule from whatever is behind it, the inset rim is the light
+     catching its top lip. Drawn together in one box-shadow with the separation shadow. */
+  border:.5px solid var(--tab-edge);
+  box-shadow:inset 0 .5px 0 var(--tab-rim), var(--tab-shadow);
+  /* Apple's own figures: a heavy blur with the backdrop saturated well past 100%, which is what
+     makes the material read as glass rather than as frosted plastic. */
+  -webkit-backdrop-filter:blur(30px) saturate(180%);
+  backdrop-filter:blur(30px) saturate(180%);
+  transition:padding .3s cubic-bezier(.32,.72,0,1);
+}
+/* THE LABELS ARE THE PLATFORM'S, NOT THIS SITE'S. `.chip` sets tracked-out uppercase, which is
+   the calvin.sg control vocabulary and is wrong here -- a system tab bar is sentence case, a
+   little over 13px, medium weight, with no tracking at all. The class stays for the surface it
+   shares with the theme control; everything that would make it look like this site is undone. */
+.navbar .chip{
+  border:0; background:transparent; border-radius:999px;
+  padding:.3rem 1.125rem;
+  text-transform:none; letter-spacing:normal;
+  font-size:.8125rem; font-weight:500;
+  color:var(--tab-label);
+  transition:color .2s cubic-bezier(.32,.72,0,1), background-color .2s cubic-bezier(.32,.72,0,1);
+}
+/* The selected tab is a filled capsule behind the label, and the label takes the app's own tint
+   -- which IS the stock behaviour: every system tab bar is tinted by the app it belongs to, and
+   for this one that is the accent. The ink inversion this used to wear is a calvin.sg idiom and
+   has been dropped along with the rest of them. */
+.navbar .chip[aria-current=page]{background:var(--tab-selected); color:var(--accent)}
+@media (hover: hover){
+  .navbar .chip:hover{color:var(--accent); border-color:transparent}
+}
+.navbar .chip:active{border-color:transparent; transform:scale(.96)}
+.navbar .chip[aria-current=page]:active{color:var(--accent)}
+
+/* MINIMISED, THE WAY THE PLATFORM'S OWN BAR SHRINKS ON A SCROLL DOWN -- with one difference that
+   is not negotiable. The system bar collapses its labels to icons; there is no icon here for
+   either screen, and one tab wearing a mark beside another wearing a word is worse than neither
+   having one. So both words stay at every size and only the space around them goes.
+   THE TARGET IS FLOORED, NOT SHRUNK. `min-height` and `min-width` stay at 2.75rem, the enhanced
+   target size. A navigation whose hit area gets smaller as you read is a defect at 6am, not a
+   flourish. Only the padding and the type step move. */
+.navbar[data-min] .pill{padding:.125rem}
+.navbar[data-min] .chip{padding:.3rem .8125rem; font-size:.75rem}
+
+/* THE GLASS IS AN ENHANCEMENT AND FAILS TO A SOLID SURFACE, never to a transparent one -- a pill
+   with no ground floating over scrolling text is unreadable rather than merely plain. The solid
+   fallback is the one place the bar borrows from this page's palette, because an opaque surface
+   under this page's own text has to agree with this page's own ground.
+   Only two of these three actually fire on the platform this page is for: iOS has no
+   `prefers-reduced-transparency` as of Safari 26.6, so a reader who set Reduce Transparency
+   still gets the blur. The query ships because it costs nothing and becomes correct the day
+   WebKit implements it -- it is not a guard that is working today. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))){
+  .navbar .pill{background:var(--card-background); border-color:var(--card-border)}
+}
+@media (prefers-reduced-transparency: reduce){
+  .navbar .pill{background:var(--card-background); border-color:var(--card-border)}
+}
+@media (forced-colors: active){
+  .navbar .pill{background:Canvas; border-color:CanvasText; box-shadow:none}
+  .navbar .chip{color:CanvasText}
+  .navbar .chip[aria-current=page]{
+    forced-color-adjust:none; background:Highlight; color:HighlightText;
+  }
+}
+
+/* ── the skeleton ──────────────────────────────────────────────────────────────────────────
+   WHAT STANDS IN THE HERO'S PLACE WHILE /s IS IN FLIGHT. It used to be nothing at all: a white
+   page, indistinguishable from one that failed to load, for as long as the network took.
+   It is STILL, not shimmering. This design's rule is that information is never carried in
+   motion alone, and "still loading" is information -- so it has to be legible in a frozen frame,
+   which is also what a reader with reduced motion gets. */
+.skel{margin:0 0 1.75rem 0}
+.skel span{display:block; background:var(--fill); border-radius:2px}
+.skel .s-kind{width:5rem; height:.8125rem; margin-bottom:.75rem}
+.skel .s-title{width:70%; height:1.375rem; margin-bottom:1.25rem}
+.skel .s-label{width:4.5rem; height:.9375rem; margin-bottom:.5rem}
+.skel .s-clock{width:9rem; height:clamp(3rem, 17vw, 4.25rem); margin-bottom:.75rem}
+.skel .s-win{width:12rem; height:.8125rem}
+
 /* ── the week screen ───────────────────────────────────────────────────────────────────────
    The second screen, and everything below is only ever on it. It is a LIST, where the Now screen
    is a single card: the reader is scanning seven days rather than reading one number, so nothing
    here is allowed to compete with `.clock` for weight -- the two screens share a palette and a
    type ramp, not a hierarchy. */
-.nav{margin:1.25rem 0 0 0; display:flex; gap:.5rem}
 /* The week screen's own name. It is an `h1` -- one per screen -- so the ramp above already sets
    it; the ONLY thing that differs is the space beneath, because the Kiprun line belongs to this
    heading rather than to the gauge. Restating the ramp here would be a second copy of a size that
    is already decided, and this rule was briefly written as `h2.weekhead`, which matched nothing. */
 .weekhead{margin:0 0 .25rem 0}
-.race{color:var(--quiet); font-size:.8125rem; margin:0 0 1.25rem 0}
+.race{color:var(--quiet); font-size:.8125rem; margin:0 0 1.5rem 0}
 
 /* THE GAUGE. The design system's rule for a quantity: a flat two-pixel stroke, the marked region
    over the remainder, and the scale named IN WORDS BEFORE the bar -- a length means nothing until
    the reader knows what it is measured against. The number is printed as well as drawn, because a
    bar is a shape and the reader who cannot resolve the shape is the one who most needs the value.
    No ink goes inside the bar: the fill flips polarity between the themes. */
-.gauge{margin:0 0 1.5rem 0}
+.gauge{margin:0 0 1.75rem 0}
 .gauge .scale{display:block; margin-bottom:.5rem; font-size:.9375rem}
 .gauge .scale b{font-weight:600; font-variant-numeric:tabular-nums}
 .gauge .bar{display:block; height:2px; background:var(--progress-track); overflow:hidden}
@@ -281,19 +496,22 @@ footer{margin-top:1.5rem; color:var(--quieter); font-size:.6875rem}
    a measured zero and an unmeasured value are different facts and only the undrawn one can say so. */
 .gauge .absent{color:var(--quieter); font-size:.8125rem; margin:.5rem 0 0 0}
 
-.day{padding:1rem 0 0 0; border-top:1px solid var(--card-border)}
+.day{padding:1.125rem 0 0 0; border-top:1px solid var(--card-border)}
 .day:first-of-type{border-top:0; padding-top:0}
 /* TODAY, DRAWN IN FULL ON THE FIRST SCREEN. It is `.day` in every respect but the class, and the
    class is separate for one measured reason: `.day:first-of-type` above strips the rule and the
    space from the first day of the week, and on the Today screen this section IS the first one --
-   so sharing the class would silently delete the only thing separating it from the card above it.
+   so sharing the class would silently delete the only thing separating it from the hero above it.
    Everything inside it (`.dhead`, `.tag`, `.slots`, `.bed`, `.pastline`) is styled by its own class
    and needs nothing further. */
-.dayfull{margin:1.5rem 0 1.25rem 0; padding-top:1.25rem; border-top:1px solid var(--card-border)}
-.dhead{display:flex; flex-wrap:wrap; gap:.375rem .625rem; align-items:baseline;
-       margin:0 0 .625rem 0; font-size:.9375rem; font-weight:600}
+.dayfull{margin:1.75rem 0 0 0; padding-top:1.375rem; border-top:1px solid var(--card-border)}
+/* The day's own head. The date, its one-word character and the today marker are three different
+   facts, so they sit in a row with space between them rather than being strung together with a
+   punctuation glyph. */
+.dhead{display:flex; flex-wrap:wrap; gap:.375rem .75rem; align-items:baseline;
+       margin:0 0 .75rem 0; font-size:.9375rem; font-weight:600}
 .dhead .d{white-space:nowrap}
-/* The day's one-word character, in the same hairline bib the Now card's `bring` list wears. */
+/* The day's one-word character, in the same hairline bib the hero's `bring` list wears. */
 .tag{border:1px solid var(--hairline); border-radius:2px; padding:.05rem .4rem;
      font-size:.6875rem; font-weight:700; letter-spacing:.08em; text-transform:uppercase;
      color:var(--quiet)}
@@ -316,13 +534,14 @@ footer{margin-top:1.5rem; color:var(--quieter); font-size:.6875rem}
 .slot .t--none{color:var(--quieter)}
 /* `min-width:0` because a grid item refuses to shrink below its longest word by default, and a
    venue or a session name from upstream is not a string this page gets to choose the length of.
-   Same defence `dd` already carries on the Now screen, for the same reason. */
+   Same defence `dd` already carries on the Today screen, for the same reason. */
 .sbody{min-width:0; display:grid; gap:.25rem; align-content:start}
 /* INLINE, NOT FLEX. As a flex row the mark is its own item, so at 320px it wraps onto a line of
    its own and the reader gets a bicycle floating above the session it belongs to -- a mark paired
    with nothing, which is the one thing the design system says a mark must never be. Inline, it
    flows with the words and breaks only where text breaks. */
 .slot .what{margin:0; font-size:.9375rem; min-width:0; overflow-wrap:anywhere}
+.slot .kind{color:var(--quieter); font-size:.75rem; display:block}
 .slot .leave{color:var(--quiet); font-size:.8125rem; font-variant-numeric:tabular-nums; margin:0}
 .slot .where{color:var(--quieter); font-size:.8125rem; overflow-wrap:anywhere; margin:0}
 
@@ -336,7 +555,7 @@ footer{margin-top:1.5rem; color:var(--quieter); font-size:.6875rem}
 /* THE ONE RULE, and it is the reason this screen can replace most of the weekly page. It is the
    decision made BEFORE the session, in the artifact's own words -- "if rep 2 comes in slower than
    5:40/km, rep 3 is run at 6:00/km" -- and it is already in the payload. It gets the hairline the
-   Now card gives it, because on the day it is the only line that changes what happens. */
+   hero gives it, because on the day it is the only line that changes what happens. */
 .srule{margin:.25rem 0 0 0; padding-top:.375rem; border-top:1px solid var(--hairline);
        font-size:.875rem; line-height:1.45}
 .swhy{margin:0; color:var(--quiet); font-size:.8125rem; line-height:1.5}
@@ -355,8 +574,10 @@ footer{margin-top:1.5rem; color:var(--quieter); font-size:.6875rem}
 .slot--closed .sport,.slot--closed .kind{color:var(--quieter)}
 
 /* The night that closes the day. It is not a session -- it is what the plan asks of the hours
-   after the last one -- so it sits below them and is set quieter than they are. */
-.bed{margin:.625rem 0 0 0; color:var(--quiet); font-size:.8125rem; line-height:1.5}
+   after the last one -- so it sits below them and is set quieter than they are. `Bed` keeps its
+   tracked-out capitals: it is a short word labelling a time INLINE, and without the treatment it
+   reads as part of the sentence rather than as the name of the value beside it. */
+.bed{margin:.75rem 0 0 0; color:var(--quiet); font-size:.8125rem; line-height:1.5}
 .bed .mc{color:var(--quieter); margin-right:.4em}
 .bed .plan{font-variant-numeric:tabular-nums; color:var(--text)}
 
@@ -443,6 +664,14 @@ details[open] > summary .disc{transform:rotate(90deg)}
   </fieldset>
 </footer>
 
+<!-- THE NAVIGATION LIVES OUTSIDE #root, and that is structural rather than tidy. `paint()` empties
+     #root on every screen swap; a bar rendered into it would be destroyed and rebuilt each time,
+     losing its scroll state and its focus. Here it is a landmark that persists across both
+     screens and is only ever REFILLED. `hidden` until there is a week to switch between. -->
+<nav id="nav" class="navbar" aria-label="Screens" hidden>
+  <div class="pill"></div>
+</nav>
+
 <script nonce="__NONCE__">
 (function () {
   "use strict";
@@ -511,6 +740,10 @@ details[open] > summary .disc{transform:rotate(90deg)}
     // header where it already was. The alternative, color_key:"bg_color", is worse than nothing
     // here -- it paints the header from TELEGRAM's palette, which is the disagreement itself.
     postEvent("web_app_set_header_color", { color: bg });
+    // THE THIRD EDGE. The client draws its own strip below this page as well as above it, and
+    // painting two of the three left the seam half closed -- a matched header, a matched ground
+    // and a bottom bar still in Telegram's colour, directly under a floating navigation.
+    postEvent("web_app_set_bottom_bar_color", { color: bg });
   }
 
   // Tell Telegram the app is up and ask for full height. telegram-web-app.js is deliberately NOT
@@ -534,12 +767,16 @@ details[open] > summary .disc{transform:rotate(90deg)}
 
   var view = null;
   var root = document.getElementById("root");
+  var navEl = document.getElementById("nav");
+  var pillEl = navEl.querySelector(".pill");
 
   // Whether TELEGRAM can draw the way back. Two conditions, and both are needed: the client has to
   // be on Bot API 6.1+ for the back button to exist at all, and there has to be a bridge to ask.
-  // Assigned once at boot, from the launch parameters. When it is false the week screen draws its
-  // own `Today` chip instead -- so the fallback is conditional rather than a permanent duplicate
-  // of a control the header already offers.
+  // Assigned once at boot, from the launch parameters.
+  //
+  // !! IT NO LONGER GATES ANYTHING THE READER DEPENDS ON. The week screen used to draw its own
+  // `Today` chip only where this was false; the floating navigation is now always on screen, so
+  // the arrow is a second way to do one thing rather than the only way on some clients.
   var backSupported = false;
 
   function setBackButton(visible) {
@@ -547,13 +784,21 @@ details[open] > summary .disc{transform:rotate(90deg)}
     postEvent("web_app_setup_back_button", { is_visible: !!visible });
   }
 
+  // ONE TAP, ONE ANSWER FROM THE PHONE. A selection change is the lightest of the three kinds and
+  // is what the platform uses for exactly this -- moving between two views of one thing. It fails
+  // open like every other cosmetic path: no bridge, no buzz, same navigation.
+  function haptic(kind) {
+    if (kind === "select") postEvent("web_app_trigger_haptic_feedback", { type: "selection_change" });
+    else postEvent("web_app_trigger_haptic_feedback", { type: "impact", impact_style: "light" });
+  }
+
   // Telegram puts the launch parameters in the URL FRAGMENT, which is never sent to a server --
   // so nothing can be proven about the first GET, and this is the request that proves it. The
   // query string is checked too because a direct link can deliver them there on some clients.
-  // ALSO READS THE VERSION, which is the one fact that decides whether this page draws its own
-  // way back. Telegram puts `tgWebAppVersion` in the same fragment as the credential, so the
-  // client's Bot API level is already in hand and costs no round trip and no feature-detection
-  // guess -- and the back button it gates on needs 6.1.
+  // ALSO READS THE VERSION, which is the one fact that decides which of the client's own controls
+  // this page may ask for. Telegram puts `tgWebAppVersion` in the same fragment as the credential,
+  // so the client's Bot API level is already in hand and costs no round trip and no
+  // feature-detection guess.
   //
   // ALSO READS THE START PARAMETER, which is how a `?startapp=` deep link says which screen to
   // open on. Telegram delivers it as `tgWebAppStartParam` in the SAME fragment as the credential
@@ -620,9 +865,34 @@ details[open] > summary .disc{transform:rotate(90deg)}
   // Sending is one postMessage; being TOLD the arrow was pressed needs a listener, and the two
   // transports have different shapes. Still no telegram-web-app.js: this is the whole of what it
   // would have been loaded for.
+  //
+  // `data` IS THE SECOND PARAMETER, AND IT WAS MISSING. This function was declared
+  // `handleTelegramEvent(type)` for its whole life while `installReceiver` below already called
+  // it with `(type, data)` -- so the payload was forwarded correctly and thrown away by the
+  // callee, on EVERY transport including the native iOS one. Nothing noticed because
+  // `back_button_pressed` is the only event that was ever handled and it carries no payload. The
+  // moment an event with a body is wanted -- the safe-area insets a floating bar cannot be
+  // positioned without -- it arrives `undefined`. Widening the signature is half the fix; the
+  // `message` listener forwarding `msg.eventData` is the other half.
   var onBackPressed = null;
-  function handleTelegramEvent(type) {
+  function handleTelegramEvent(type, data) {
     if (type === "back_button_pressed" && onBackPressed) onBackPressed();
+    if (type === "safe_area_changed") applySafeArea(data);
+    if (type === "settings_button_pressed") revealThemeControl();
+  }
+
+  // THE INSET THE CSS CANNOT SEE FOR ITSELF. `env(safe-area-inset-bottom)` resolves to 0 inside
+  // Telegram's iOS webview, so without this the pill sits on the home indicator on every notched
+  // iPhone -- and only there, which is why a browser cannot find it.
+  //
+  // !! THE UNIT IS NOT OPTIONAL. Telegram sends `bottom` as a bare number. A unitless custom
+  // property is syntactically legal, so nothing throws -- but substituted into the `max()` in
+  // --nav-inset it is invalid AT COMPUTED-VALUE TIME, and that does NOT fall back to the var()
+  // default: it resets --nav-inset and everything built from it to the inherited value, silently,
+  // with no console error and a bar in the wrong place.
+  function applySafeArea(data) {
+    if (!data || typeof data.bottom !== "number" || !isFinite(data.bottom)) return;
+    docEl.style.setProperty("--sa-bottom", Math.max(0, data.bottom) + "px");
   }
 
   // ALL THREE GLOBALS, AND NEVER CONDITIONALLY. Telegram delivers an event by CALLING a function
@@ -665,7 +935,10 @@ details[open] > summary .disc{transform:rotate(90deg)}
     var msg;
     try { msg = JSON.parse(e.data); } catch (err) { return; }
     if (!msg || typeof msg.eventType !== "string") return;
-    handleTelegramEvent(msg.eventType);
+    // `eventData` IS ALREADY AN OBJECT here -- the JSON.parse above is the only one there is, and
+    // parsing it a second time would throw on every event that carries a body. The three native
+    // receive paths hand over an object too, so nothing downstream ever sees a string.
+    handleTelegramEvent(msg.eventType, msg.eventData);
   });
 
   function el(tag, cls, text) {
@@ -722,7 +995,7 @@ details[open] > summary .disc{transform:rotate(90deg)}
 
   function renderHeader() {
     var h = el("header");
-    if (view.weekLabel) add(h, el("span", "week mc", view.weekLabel));
+    if (view.weekLabel) add(h, el("span", "week", view.weekLabel));
     if (view.generatedAt) {
       var t = el("span", "asof", "updated " + (hhmm(view.generatedAt) || "") + " " + (view.generatedAt || "").slice(0, 10));
       add(h, t);
@@ -731,8 +1004,8 @@ details[open] > summary .disc{transform:rotate(90deg)}
   }
 
   function renderSession(s) {
-    var c = el("div", "card card--now");
-    add(c, el("span", "kind mc", s.kind));
+    var c = el("div", "hero");
+    add(c, el("span", "kind", s.kind));
     // The mark the week screen already gives this session, on the screen it matters most. It is
     // paired with the title rather than standing alone, which is the design system's whole rule
     // for a mark -- and `sportMark` carries its own visually-hidden word, so nothing here depends
@@ -760,21 +1033,25 @@ details[open] > summary .disc{transform:rotate(90deg)}
     var big = hhmm(iso);
     if (big) {
       var clock = el("p", "clock");
-      add(clock, el("span", "label mc", label));
+      add(clock, el("span", "label", label));
       var time = el("time", null, big);
       time.setAttribute("datetime", iso);
       add(clock, time);
-      var window_ = dayLabel(s);
+      // TWO FACTS, TWO COLUMNS. This used to read "Sun 7 Sep <middot> 05:30-08:00", which joins a
+      // date to a span with a punctuation glyph doing the work of layout. The day and the window
+      // are different kinds of thing and are set apart with space instead.
+      var window_ = el("span", "window");
+      add(window_, el("span", "day", dayLabel(s)));
       var from = hhmm(s.at), to = hhmm(s.until);
-      if (from) window_ += " · " + from + (to ? "–" + to : "");
-      add(clock, el("span", "window", window_));
+      if (from) add(window_, el("span", "span", from + (to ? "–" + to : "")));
+      add(clock, window_);
       add(c, clock);
     }
 
     var dl = el("dl");
     var any = false;
-    if (s.place)  { add(dl, el("dt", "mc", "Where")); add(dl, el("dd", null, s.place));  any = true; }
-    if (s.travel) { add(dl, el("dt", "mc", "Travel")); add(dl, el("dd", null, s.travel)); any = true; }
+    if (s.place)  { add(dl, el("dt", null, "Where")); add(dl, el("dd", null, s.place));  any = true; }
+    if (s.travel) { add(dl, el("dt", null, "Travel")); add(dl, el("dd", null, s.travel)); any = true; }
     if (any) add(c, dl);
 
     // THE SESSION'S OWN FIGURES, which this card went without for its whole life while the week
@@ -798,17 +1075,22 @@ details[open] > summary .disc{transform:rotate(90deg)}
   }
 
   // WHAT COMES AFTER TODAY, and deliberately not "the next session". Today is drawn IN FULL below
-  // the Now card, so the second thing in the window is almost always a row that list already
+  // the hero, so the second thing in the window is almost always a row that list already
   // carries -- and repeating it under the list is the one duplication a screen this short cannot
   // afford. What the list genuinely cannot show is tomorrow and the day after, so that is what this
   // card is: one line of it, plus the count of the rest.
+  //
+  // IT IS THE ONE BOXED THING ON A HEALTHY SCREEN, and the box is the rule rather than a leftover:
+  // a border here marks an aside, and this is a different day.
   function renderAfterToday(a) {
     var s = a.next;
     var c = el("div", "card");
-    add(c, el("span", "kind mc", "After today"));
+    add(c, el("span", "kind", "After today"));
     var row = el("p", "next");
     var when = dayLabel(s);
     var t = hhmm(s.at);
+    // A date and a time are the same KIND of fact -- one stamp, read as one thing -- so the dot
+    // stays here where it was removed from the clock's window line.
     if (t) when += " · " + t;
     add(row, el("span", "when", when));
     var what = el("span", "what");
@@ -845,7 +1127,7 @@ details[open] > summary .disc{transform:rotate(90deg)}
       add(root, renderSession(view.now));
       if (view.now.intention) {
         var why = el("p", "why");
-        add(why, el("span", "mc", "Why this session"));
+        add(why, el("b", null, "Why this session"));
         why.appendChild(document.createTextNode(view.now.intention));
         add(root, why);
       }
@@ -857,7 +1139,7 @@ details[open] > summary .disc{transform:rotate(90deg)}
           : "Nothing is still to come in the next three days. Everything in that window is done, missed, or a rest by design."));
     }
 
-    // TODAY, IN FULL. The Now card answers the 6am question and is what this screen is FOR, but it
+    // TODAY, IN FULL. The hero answers the 6am question and is what this screen is FOR, but it
     // is one session, and everything the reader could not see without opening the week -- the day's
     // character, the sessions that are done or declined, the figures, tonight's bedtime -- was one
     // tap away on a screen he does not open at 06:15.
@@ -869,17 +1151,7 @@ details[open] > summary .disc{transform:rotate(90deg)}
 
     if (view.afterToday.next) add(root, renderAfterToday(view.afterToday));
 
-    // The way in to the second screen. A CHIP and not a plated control: the design system spends
-    // the offset plate on a page's ONE action, and getting somewhere is chrome. It sits after the
-    // plan for the same reason the theme control sits at the foot -- at 6am the number is what the
-    // eye and the keyboard should meet first.
-    if (hasWeek()) {
-      var nav = el("div", "nav");
-      add(nav, navChip("The week", function () { show("week"); }));
-      add(root, nav);
-    }
-
-    var f = el("footer", null, view.plannedKm
+    var f = el("footer", "credit", view.plannedKm
       ? view.weekLabel + " · " + view.plannedKm + " km planned" + (view.ceilingKm ? " of a " + view.ceilingKm + " km ceiling" : "")
       : view.weekLabel);
     add(root, f);
@@ -891,12 +1163,59 @@ details[open] > summary .disc{transform:rotate(90deg)}
     return Boolean(view && view.ok && view.week && view.week.days && view.week.days.length);
   }
 
-  function navChip(label, onClick) {
+  /**
+   * @param label     the destination's own name, and the same string its heading uses
+   * @param onClick   what it does
+   * @param isCurrent whether this is the screen already showing. Optional, and only the
+   *                  navigation passes it -- `aria-current` is what tells a screen reader which
+   *                  of the two you are on, and the inverted fill is what tells everyone else.
+   */
+  function navChip(label, onClick, isCurrent) {
     var b = el("button", "chip", label);
     b.type = "button";
+    if (isCurrent) b.setAttribute("aria-current", "page");
     b.addEventListener("click", onClick);
     return b;
   }
+
+  // THE BAR ITSELF. Refilled rather than rebuilt, and hidden outright until there is a week --
+  // an error screen has one screen, and offering a tab to a second one that does not exist is a
+  // control that lies. That is the same condition the old in-page chip carried.
+  function renderNav() {
+    if (!hasWeek()) { navEl.hidden = true; pillEl.textContent = ""; return; }
+    pillEl.textContent = "";
+    add(pillEl, navChip("Today", function () { show("today"); }, screen === "today"));
+    add(pillEl, navChip("The week", function () { show("week"); }, screen === "week"));
+    navEl.hidden = false;
+  }
+
+  // MINIMISE ON A SCROLL DOWN, EXPAND ON A SCROLL UP, the way the platform's own bar behaves.
+  // The threshold is what stops it flickering on the small deltas a finger produces at rest, and
+  // the rAF gate is what keeps a scroll handler off the critical path.
+  //
+  // Under a reduced-motion preference it never minimises at all. The state is carried by padding
+  // and type size rather than by the hit target, so a still frame at either size says the same
+  // thing -- but a reader who asked for less movement is asking for the bar to hold still.
+  var lastY = 0, ticking = false;
+  var reduceMotion = false;
+  try {
+    reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  } catch (e) { /* a client with no matchMedia gets the movement, which is the old behaviour */ }
+
+  function onScroll() {
+    if (ticking) return;
+    ticking = true;
+    window.requestAnimationFrame(function () {
+      ticking = false;
+      var y = window.pageYOffset || document.documentElement.scrollTop || 0;
+      if (Math.abs(y - lastY) < 8) return;
+      // Never minimised at the very top: the bar's resting state is its full one.
+      if (y > lastY && y > 24) navEl.setAttribute("data-min", "");
+      else navEl.removeAttribute("data-min");
+      lastY = y;
+    });
+  }
+  if (!reduceMotion) window.addEventListener("scroll", onScroll, { passive: true });
 
   /** One decimal, and no trailing ".0" -- 44.23 is 44.2 km and 18 is 18 km, never 18.0. */
   function fmtKm(n) {
@@ -1023,13 +1342,13 @@ details[open] > summary .disc{transform:rotate(90deg)}
     var body = el("div", "sbody");
 
     // `kind` IS SHOWN ONLY WHERE THERE IS NO CLOCK, and that is a deliberate exception to carrying
-    // everything. It reads "Run · 19:00" on a session whose `at` is 19:24 -- the artifact's label
-    // quotes the CALL time and the payload states the gun -- so printing both puts two disagreeing
-    // clocks on one row. CONTRACT.md says outright that `kind` is not a time and must not be parsed
-    // for one, so stripping the clock out of it is not available either. Where the session has no
-    // `at` at all, `kind` is the only thing describing it ("Ride · evening", "Rest · by design")
-    // and it is shown in full.
-    if (!t && s.kind) add(body, el("span", "kind mc", s.kind));
+    // everything. It reads "Run <middot> 19:00" on a session whose `at` is 19:24 -- the artifact's
+    // label quotes the CALL time and the payload states the gun -- so printing both puts two
+    // disagreeing clocks on one row. CONTRACT.md says outright that `kind` is not a time and must
+    // not be parsed for one, so stripping the clock out of it is not available either. Where the
+    // session has no `at` at all, `kind` is the only thing describing it ("Ride <middot> evening",
+    // "Rest <middot> by design") and it is shown in full.
+    if (!t && s.kind) add(body, el("span", "kind", s.kind));
 
     var what = el("p", "what");
     if (s.sport === "run" || s.sport === "ride") what.appendChild(sportMark(s.sport));
@@ -1120,6 +1439,9 @@ details[open] > summary .disc{transform:rotate(90deg)}
       sum.appendChild(discMark());
       add(sum, el("span", "d", dayLabel(d)));
       sum.appendChild(document.createTextNode(line));
+      // One light knock when a spent day opens, and none when it closes: the answer belongs to
+      // the thing arriving, not to it going away.
+      det.addEventListener("toggle", function () { if (det.open) haptic("open"); });
       add(det, sum);
 
       if (d.sessions.length) {
@@ -1179,7 +1501,7 @@ details[open] > summary .disc{transform:rotate(90deg)}
 
   /**
    * @param d        today, out of the week
-   * @param heroKey  the key of the session already drawn as the Now card, or null when the Now card
+   * @param heroKey  the key of the session already drawn as the hero, or null when the hero
    *                 is showing a LATER day -- which is the case on a day whose plan is spent, and
    *                 there this block is the only account of what happened.
    */
@@ -1189,7 +1511,7 @@ details[open] > summary .disc{transform:rotate(90deg)}
       if (d.sessions[i].key !== heroKey) others.push(d.sessions[i]);
     }
     // Nothing to say, and no head to say it under. A day with a tag or a bedtime still has
-    // something the Now card cannot carry, so those alone are enough to draw the block.
+    // something the hero cannot carry, so those alone are enough to draw the block.
     if (!others.length && !d.bed && !d.tag) return null;
 
     var sec = el("section", "dayfull");
@@ -1218,18 +1540,8 @@ details[open] > summary .disc{transform:rotate(90deg)}
   function renderWeek() {
     var w = view.week;
     var h = el("header");
-    if (view.weekLabel) add(h, el("span", "week mc", view.weekLabel));
+    if (view.weekLabel) add(h, el("span", "week", view.weekLabel));
     add(root, h);
-
-    // THE WAY BACK, ALWAYS DRAWN AND AT THE TOP. This was version-gated -- shown only where
-    // Telegram could not draw its own arrow -- on the reasoning that two controls for one action
-    // is furniture. Measured on a phone, that reasoning cost the whole feature: the arrow rendered
-    // and did nothing, and there was no other way off this screen. A way back is not furniture, and
-    // it does not get to depend on a bridge. Telegram's arrow is still set up and still works; this
-    // is simply not conditional on it.
-    var back = el("div", "nav nav--back");
-    add(back, navChip("Today", function () { show("today"); }));
-    add(root, back);
 
     // The control that opened this screen says "The week" and so does its heading. Two strings
     // that have to agree are one string.
@@ -1242,28 +1554,45 @@ details[open] > summary .disc{transform:rotate(90deg)}
 
     add(root, renderGauge(w.volume || {}));
     for (var i = 0; i < w.days.length; i++) add(root, renderDay(w.days[i]));
-
-    // And again at the foot, because the week is long and scrolling back to the top to leave is a
-    // tax on the reader who read all of it.
-    var foot = el("div", "nav");
-    add(foot, navChip("Today", function () { show("today"); }));
-    add(root, foot);
   }
 
   // ── the two screens ───────────────────────────────────────────────────────────────────────
 
   var screen = "today";
 
+  // WHAT STANDS IN THE HERO'S PLACE WHILE THE NETWORK ANSWERS. Not a spinner and not a blank
+  // page: a blank page is indistinguishable from one that failed to load, and this one used to
+  // show exactly that for the whole duration of the fetch.
+  function renderSkeleton() {
+    var s = el("div", "skel");
+    s.setAttribute("aria-hidden", "true");
+    add(s, el("span", "s-kind"));
+    add(s, el("span", "s-title"));
+    add(s, el("span", "s-label"));
+    add(s, el("span", "s-clock"));
+    add(s, el("span", "s-win"));
+    root.textContent = "";
+    // The word, for a reader who gets no shapes at all. `role="status"` so it is announced
+    // rather than found.
+    var live = el("p", "sr-only", "Loading the plan.");
+    live.setAttribute("role", "status");
+    add(root, live);
+    add(root, s);
+  }
+
   function paint() {
     root.textContent = "";
     if (!view.ok) {
       add(root, banner("Cannot show the plan", view.error || "Something is wrong with the published plan."));
+      renderNav();
       return;
     }
     if (screen === "week") renderWeek(); else renderToday();
+    renderNav();
   }
 
   function show(next) {
+    haptic("select");
     screen = next;
     // The screen's name goes on the LANDMARK rather than into a visible eyebrow. It gives the
     // region the name the accessibility guidance asks for, at both ends of the navigation, without
@@ -1274,7 +1603,23 @@ details[open] > summary .disc{transform:rotate(90deg)}
     // A swapped screen starts at its own top. Without this, returning from the foot of a scrolled
     // week lands the reader partway down a layout that is no longer there.
     window.scrollTo(0, 0);
+    lastY = 0;
+    navEl.removeAttribute("data-min");
     root.focus();
+  }
+
+  // THE GEAR IS A SHORTCUT TO THE CONTROL, NEVER ITS ONLY HOME -- and that distinction is the
+  // whole lesson of the dead back arrow. `web_app_setup_settings_button` needs Bot API 6.10 and a
+  // bridge, and on a home-screen web app there is no bridge at all, so a theme control that lived
+  // only behind the gear would be unreachable there and on any client where the event is accepted
+  // and never delivered. The fieldset at the foot is always rendered and always wired; this puts a
+  // second, faster way to reach it in Telegram's own chrome for the clients that have one.
+  function revealThemeControl() {
+    var first = document.getElementById("theme-system");
+    if (!first) return;
+    var label = document.querySelector("label[for=theme-system]");
+    if (label && label.scrollIntoView) label.scrollIntoView({ block: "center" });
+    first.focus();
   }
 
   // The screen a launch opens on, which is `today` unless a deep link said otherwise.
@@ -1318,10 +1663,21 @@ details[open] > summary .disc{transform:rotate(90deg)}
   // Telegram's arrow is a header control, so the page has to say what it does with it.
   onBackPressed = function () { if (screen === "week") show("today"); };
 
+  // EACH ASKS ONLY WHERE THE CLIENT CAN ANSWER, and each failure is silence rather than an error.
+  // The insets are requested AFTER expand, because expand is what changes the height the client
+  // is measuring against -- whether that ordering actually matters on iOS is not documented, so
+  // it is on the device checklist rather than assumed.
+  if (atLeast(launch.version, 8, 0)) postEvent("web_app_request_safe_area");
+  // A vertical drag inside a seven-day list is a scroll, not a dismissal. Without this the week
+  // closes the app somewhere around the third day.
+  if (atLeast(launch.version, 7, 7)) postEvent("web_app_setup_swipe_behavior", { allow_vertical_swipe: false });
+  if (atLeast(launch.version, 6, 10) && hasBridge()) postEvent("web_app_setup_settings_button", { is_visible: true });
+
   if (!launch.data) {
     render({ ok: false, error: "Open this from your chat with Mochi." });
     return;
   }
+  renderSkeleton();
   fetch("/s", {
     method: "POST",
     body: launch.data,
