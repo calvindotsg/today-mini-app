@@ -5,6 +5,33 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Today</title>
 <!--
+  THE INSTALLABLE HALF. Inert on the Telegram route and served there anyway, because / and /web/
+  must stay BYTE-IDENTICAL: ci.yml and drift.yml prove the deploy by hashing this file with only
+  the nonce placeholder normalised, so a second per-request substitution would make those digests
+  disagree for ever. Telegram ignores all of it.
+
+  !! DO NOT WRITE THAT PLACEHOLDER'S LITERAL NAME IN A COMMENT. The Worker substitutes EVERY
+  occurrence in this file, comments included, so a comment naming it gets a fresh random value on
+  every request -- which is the very drift this paragraph is warning about, introduced by the
+  paragraph warning about it. Both digests then disagree for ever and the deploy reports red while
+  shipping fine. Caught here by the / vs /web/ byte-identical test, which is the only thing that
+  would have.
+
+  The title stays "Today" -- worker.http.test.mjs pins that string, and it would be the wrong place
+  for the app's name anyway: iOS reads the home-screen label from the manifest and the meta below,
+  and truncates it at roughly twelve characters.
+
+  There is deliberately NO static theme-color here. It would be a literal palette value outside the
+  three blocks, wrong in two of the three theme states, and watched by nothing. The element is
+  created empty pre-paint and syncChrome is its only writer -- see both comments below.
+-->
+<link rel="manifest" href="/web/app.webmanifest">
+<link rel="apple-touch-icon" href="/web/icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="My plan">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<!--
   THE ONE SCREEN, AND THE ONLY DOCUMENT. Served to anyone who asks; it carries the design and the
   renderer and NO TRAINING DATA AT ALL. The week arrives from POST /s, which answers only a launch
   Telegram signed for the one allowed account and returns 401 with an empty body to everyone else.
@@ -154,6 +181,15 @@ header .asof{color:var(--quieter); font-size:.75rem; margin-left:auto}
 }
 .banner .mc{color:var(--accent); display:block; margin-bottom:.25rem}
 .banner p{margin:0; font-size:.875rem}
+/* THE WAY BACK IN, DRAWN AS A CONTROL RATHER THAN A SENTENCE. An installed app has no address bar,
+   so "open today.calvin.sg/web/signin" is an instruction the reader cannot act on. It lives inside
+   the banner because being signed out IS the statement the banner is making. */
+.banner a.signin{
+  display:inline-block; margin-top:.625rem; padding:.5rem .875rem;
+  font-size:.875rem; font-weight:600; text-decoration:none;
+  color:var(--background); background:var(--accent); border-radius:var(--radius-card);
+}
+.banner a.signin:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
 
 /* ── the hero ──────────────────────────────────────────────────────────────────────────────
    UNBOXED, AND WITHOUT THE PLATE. It used to be a bordered card wearing `2px 2px 0` -- but the
@@ -653,6 +689,20 @@ details[open] > summary .disc{transform:rotate(90deg)}
     if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
   } catch (e) { /* Reading storage throws outright in some contexts. The page is correct with
                    nothing stored, which is the same state as never having chosen. */ }
+  // THE STATUS BAR'S ELEMENT, CREATED EMPTY AND NEVER WRITTEN HERE.
+  //
+  // In a home-screen web app the status bar follows <meta name="theme-color">, and there is no
+  // bridge, so this is the whole of what tells iOS what the page is painted. syncChrome is its
+  // ONLY writer: it already reads --background and already guards the value, and duplicating that
+  // guard here would put the same regex in this file twice with only one copy covered by a test.
+  // The day --background grows a color-mix(), the guarded copy would correctly send nothing while
+  // an unguarded one stamped something invalid, and nothing would go red.
+  //
+  // OUTSIDE the try above on purpose: that block writes nothing when nothing is stored, which is a
+  // property worth keeping, and this element has to exist either way.
+  var tc = document.createElement("meta");
+  tc.setAttribute("name", "theme-color");
+  document.head.appendChild(tc);
 })();
 </script>
 </head>
@@ -751,6 +801,13 @@ details[open] > summary .disc{transform:rotate(90deg)}
     // Only ever a plain #rrggbb -- the guard is here so a token that grows a color-mix() or
     // resolves empty sends nothing rather than something Telegram will reject.
     if (!/^#[0-9a-f]{6}$/i.test(bg)) return;
+    // THE EDGE THAT EXISTS WHEN THERE IS NO BRIDGE. On /web/ every postEvent below is a no-op, so
+    // this meta is the only thing that colours the status bar of an installed app. Written from
+    // the same guarded token as the three events, so the page has exactly one reader of --background
+    // and no literal hex anywhere outside the palette blocks. Re-runs on every theme change,
+    // because choose() calls syncChrome -- which a static pair in the head could never do.
+    var tcm = document.querySelector('meta[name="theme-color"]');
+    if (tcm) tcm.setAttribute("content", bg);
     postEvent("web_app_set_background_color", { color: bg });
     // `color` on the header needs Bot API 6.9; older clients ignore the event, which leaves the
     // header where it already was. The alternative, color_key:"bg_color", is worse than nothing
@@ -1630,7 +1687,13 @@ details[open] > summary .disc{transform:rotate(90deg)}
   function paint() {
     root.textContent = "";
     if (!view.ok) {
-      add(root, banner("Cannot show the plan", view.error || "Something is wrong with the published plan."));
+      var b = add(root, banner("Cannot show the plan", view.error || "Something is wrong with the published plan."));
+      // Only the web route can offer a way out of a refusal. In Telegram a 401 means this is not
+      // the allowed account, and there is nothing the reader can do about it.
+      if (view.signin) {
+        var a = add(b, el("a", "signin", "Sign in"));
+        a.setAttribute("href", "/web/signin");
+      }
       renderNav();
       return;
     }
@@ -1720,25 +1783,74 @@ details[open] > summary .disc{transform:rotate(90deg)}
   if (atLeast(launch.version, 7, 7)) postEvent("web_app_setup_swipe_behavior", { allow_vertical_swipe: false });
   if (atLeast(launch.version, 6, 10) && hasBridge()) postEvent("web_app_setup_settings_button", { is_visible: true });
 
-  if (!launch.data) {
+  // WHICH ROUTE THIS IS, DERIVED RATHER THAN TEMPLATED. A second per-request substitution in this
+  // file would break ci.yml's and drift.yml's deploy proof, which normalise the nonce placeholder
+  // and nothing else -- and drift.yml is the replacement for trap 2's dead alarm, so that would
+  // take the only live shipping alarm down with it. (Its literal name is deliberately not written
+  // here: the Worker substitutes every occurrence in this file, comments included. See the head.)
+  // Deriving it here also means / and /web/ serve BYTE-IDENTICAL
+  // bytes, which makes the two documents incapable of drifting apart rather than merely unlikely to.
+  var web = location.pathname.indexOf("/web/") === 0;
+
+  // SKIPPED ON /web/, NOT REPLACED WITH A SECOND EARLY RETURN. There is no launch to have there --
+  // the reader is proven by a first-party cookie instead. Returning here would leave them on a
+  // blank page, because renderSkeleton is below this line.
+  if (!web && !launch.data) {
     render({ ok: false, error: "Open this from your chat with Mochi." });
     return;
   }
   renderSkeleton();
-  fetch("/s", {
-    method: "POST",
-    body: launch.data,
-    headers: { "Content-Type": "text/plain;charset=UTF-8" },
-    cache: "no-store",
-    credentials: "omit",
-  }).then(function (r) {
-    if (!r.ok) { render({ ok: false, error: "This app is not available for your account." }); return null; }
-    return r.json();
-  }).then(function (v) {
-    if (v) render(v);
-  }).catch(function () {
-    render({ ok: false, error: "Could not reach the plan. Try again in a moment." });
-  });
+  load();
+
+  function load() {
+    return fetch(web ? "/web/s" : "/s", {
+      method: "POST",
+      body: web ? "" : launch.data,
+      headers: { "Content-Type": "text/plain;charset=UTF-8" },
+      cache: "no-store",
+      // !! "same-origin" ON /web/, OR NOTHING WORKS. The session cookie IS the credential there and
+      // "omit" drops it -- the symptom is a 401 that reads exactly like a server fault. It stays
+      // "omit" on the Telegram path, where the launch travels in the body and no cookie of any kind
+      // should ever be sent.
+      credentials: web ? "same-origin" : "omit",
+    }).then(function (r) {
+      if (!r.ok) {
+        // ONE 401 WITH AN EMPTY BODY ANSWERS BOTH ROUTES. The difference below is drawn from what
+        // the CLIENT already knows, never from the server's reply: on /web/ it means signed out and
+        // there is a way in, in Telegram it means the wrong account and there is not.
+        render(web
+          ? { ok: false, error: "You are signed out. Sign in to see this week.", signin: true }
+          : { ok: false, error: "This app is not available for your account." });
+        return null;
+      }
+      return r.json();
+    }).then(function (v) {
+      if (v) render(v);
+    }).catch(function () {
+      render({ ok: false, error: "Could not reach the plan. Try again in a moment." });
+    });
+  }
+
+  // !! THE VIEW IS A SNAPSHOT of the instant the response was built. view.js derives which day is
+  // today, the staleness banner, the Now card and `inProgress` from ONE clock, and nothing here
+  // ever re-fetched -- so a document kept alive across hours paints a passed time as a live one.
+  // "Leave by 04:55" at 09:00, in the largest type on the screen, which is the exact failure
+  // view.js has a comment about preventing. An installed app has no pull-to-refresh and no reload
+  // button, so there is no gesture that fixes it short of force-quitting from the app switcher.
+  //
+  // !! WEB ONLY, AND THAT IS NOT A SIMPLIFICATION. Re-fetching inside Telegram re-POSTs the launch
+  // credential, which worker.js refuses once it is fifteen minutes old. A resume two hours later
+  // would therefore turn a stale-but-readable screen into "not available for your account" -- which
+  // reads as an access-control failure and is strictly worse than the staleness. There is no fresh
+  // data to be had in that runtime; the honest fix for it is a different change from this one.
+  if (web) {
+    var hiddenAt = 0;
+    document.addEventListener("visibilitychange", function () {
+      if (document.visibilityState === "hidden") { hiddenAt = Date.now(); return; }
+      // A minute, so flicking away and straight back does not re-request on every glance.
+      if (hiddenAt && Date.now() - hiddenAt > 60000) { hiddenAt = 0; load(); }
+    });
+  }
 })();
 </script>
 </body>

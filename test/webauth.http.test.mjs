@@ -219,6 +219,24 @@ test("🔴 / and /web/ serve a BYTE-IDENTICAL document", async () => {
   assert.equal(a, b, "the two routes must serve the same bytes once the nonce is normalised");
 });
 
+test("🔴 the deploy digest CI computes still matches the document this Worker serves", async () => {
+  // ci.yml:185 and drift.yml:51 hash `sed 's/__NONCE__/N/g' src/app.html` and compare it against
+  // the live page normalised on `nonce="..."` alone. Any occurrence of that placeholder OUTSIDE a
+  // nonce attribute -- in a COMMENT, say -- makes the two disagree for ever: every deploy reports
+  // red while shipping fine, and drift.yml opens a Deploy-drift issue on every push to main.
+  // drift.yml is the replacement for trap 2's dead alarm, so that is the whole live shipping alarm
+  // gone, and the failure reads as a deploy fault rather than a source one.
+  //
+  // This exists because it very nearly happened: a comment EXPLAINING the placeholder rule was
+  // written containing the placeholder's literal name, and the Worker substituted it. Caught by
+  // the byte-identical test below and turned into this, because CI would only have found it after
+  // a deploy had already gone red.
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync(`${ROOT}/src/app.html`, "utf8").replace(/__NONCE__/g, "N");
+  const live = (await (await fetch(`${BASE}/`)).text()).replace(/nonce="[^"]*"/g, 'nonce="N"');
+  assert.equal(live, src, "the nonce placeholder must appear only inside nonce attributes");
+});
+
 test("the web document declares its manifest and icons in the policy, and frames nowhere", async () => {
   const res = await fetch(`${BASE}/web/`);
   await res.text();
