@@ -3,3 +3,17 @@
 # real bot credential is needed to exercise every auth path.
 BOT_TOKEN="123456:AAH-test-token-not-a-real-one"
 ALLOWED_USER_ID="1000000001"
+
+# ── the browser / home-screen way in ────────────────────────────────────────────────────────
+# 🔴 THESE GATE /web/* ONLY. `worker.js` keeps `configuredWeb` separate from `configured` on
+# purpose: fold them together and every clone whose .dev.vars predates this block fails the
+# TELEGRAM happy path with `401 !== 200` — which trap 1 records as reading exactly like an
+# access-control regression, sending you into initdata.js instead of at the missing line.
+#
+# All four are FAKE, like the two above. The suite mints its own Access tokens against a local
+# JWKS and its own session cookies with this key, so no real credential is needed to exercise
+# every path — and this repository still carries no personal identifier.
+SESSION_SECRET="local-dev-session-signing-key-not-a-real-one"
+ALLOWED_EMAIL="someone@example.com"
+ACCESS_AUD="0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+ACCESS_TEAM_DOMAIN="example-team.cloudflareaccess.com"
