@@ -231,6 +231,11 @@ test("🔴 the deploy digest CI computes still matches the document this Worker 
   // written containing the placeholder's literal name, and the Worker substituted it. Caught by
   // the byte-identical test below and turned into this, because CI would only have found it after
   // a deploy had already gone red.
+  //
+  // ⚠️ AND THE EXISTING NONCE TEST DOES NOT COVER THIS, so do not delete either as a duplicate.
+  // worker.http.test.mjs:169-174 collects `nonce="..."` occurrences and asserts they all equal the
+  // header's. A substituted value sitting loose inside a COMMENT matches that pattern nowhere at
+  // all, so it passes there in silence. The two guards look alike and catch different things.
   const { readFileSync } = await import("node:fs");
   const src = readFileSync(`${ROOT}/src/app.html`, "utf8").replace(/__NONCE__/g, "N");
   const live = (await (await fetch(`${BASE}/`)).text()).replace(/nonce="[^"]*"/g, 'nonce="N"');

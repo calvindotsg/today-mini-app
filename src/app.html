@@ -30,6 +30,18 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="My plan">
+<!--
+  !! `default`, AND NOT `black-translucent`. The translucent value looks like the more modern
+  choice and is the wrong one here for a reason that is not obvious: it makes the status bar's TEXT
+  colour this page's problem, and this page has THREE theme states, one of which is un-stamped and
+  follows the OS. There is no single honest choice across all three, and getting it wrong is white
+  text on a white ground at 6am -- on the one screen that exists to be readable at 6am.
+
+  It also means env(safe-area-inset-top) resolves to 0 in a standalone app, so the body's
+  `max(1.25rem, env(...))` floor supplies the padding. That is the floor working, not a gap: the
+  page does not run under the status bar, so there is no inset to respect. Do not flip this to make
+  that term fire -- changing what the app looks like in order to exercise a branch is backwards.
+-->
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <!--
   THE ONE SCREEN, AND THE ONLY DOCUMENT. Served to anyone who asks; it carries the design and the
