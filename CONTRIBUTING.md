@@ -38,8 +38,9 @@ exists.
 
 | Command | What it does |
 | --- | --- |
-| `npm test` | The whole suite, 125 tests |
-| `npm run test:auth` | Just the HTTP auth suite, against the real Worker in the real runtime |
+| `npm test` | The whole suite, 178 tests. **Serialised** — two suites each spawn a real `wrangler dev`, and racing them makes startup exceed its 90-second wait |
+| `npm run test:auth` | Just the Telegram HTTP auth suite, against the real Worker in the real runtime |
+| `npm run test:web` | The same, for the browser and home-screen way in |
 | `npm run dev` | `wrangler dev` on the emulated KV |
 | `npm run deploy` | Ships to `today.calvin.sg`. CI does this on merge — see below |
 | `npm run publish:week` | Reduces a weekly artifact and writes it to KV |
