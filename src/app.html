@@ -401,17 +401,32 @@ footer.credit{margin-top:1.75rem; color:var(--quieter); font-size:.6875rem}
   transition:padding .3s cubic-bezier(.32,.72,0,1);
 }
 /* THE LABELS ARE THE PLATFORM'S, NOT THIS SITE'S. `.chip` sets tracked-out uppercase, which is
-   the calvin.sg control vocabulary and is wrong here -- a system tab bar is sentence case, a
-   little over 13px, medium weight, with no tracking at all. The class stays for the surface it
-   shares with the theme control; everything that would make it look like this site is undone. */
+   the calvin.sg control vocabulary and is wrong here -- a system tab bar is sentence case, small,
+   medium weight, with no tracking at all, and it stacks a mark ABOVE the word rather than beside
+   it. Apple's guidance is explicit on both: "Include tab labels... Use single words whenever
+   possible", and in a compact view "tab bar icons appear above tab labels". The class stays for
+   the surface it shares with the theme control; everything that would make it look like this
+   site is undone. */
 .navbar .chip{
   border:0; background:transparent; border-radius:999px;
-  padding:.3rem 1.125rem;
+  flex-direction:column; gap:.1rem;
+  padding:.3125rem 1rem;
   text-transform:none; letter-spacing:normal;
-  font-size:.8125rem; font-weight:500;
+  font-size:.6875rem; font-weight:500; line-height:1.1;
   color:var(--tab-label);
   transition:color .2s cubic-bezier(.32,.72,0,1), background-color .2s cubic-bezier(.32,.72,0,1);
 }
+/* Drawn rather than fetched, at the 24-grid the rest of this page's marks use, in SF Symbols'
+   geometry: a round-capped stroke on an even weight. Stroked rather than filled, which is the one
+   place these depart from Apple's "prefer filled symbols" -- a filled clock needs its hands
+   knocked out of the disc with an even-odd winding, and a knockout that is subtly wrong reads as
+   a smudge at 22px, where a stroke cannot. The tint carries the selected state instead. */
+.navbar .tabmark{
+  width:1.375rem; height:1.375rem; display:block; flex:none;
+  fill:none; stroke:currentColor; stroke-width:1.6;
+  stroke-linecap:round; stroke-linejoin:round;
+}
+.navbar .lbl{display:block}
 /* The selected tab is a filled capsule behind the label, and the label takes the app's own tint
    -- which IS the stock behaviour: every system tab bar is tinted by the app it belongs to, and
    for this one that is the accent. The ink inversion this used to wear is a calvin.sg idiom and
@@ -431,7 +446,8 @@ footer.credit{margin-top:1.75rem; color:var(--quieter); font-size:.6875rem}
    target size. A navigation whose hit area gets smaller as you read is a defect at 6am, not a
    flourish. Only the padding and the type step move. */
 .navbar[data-min] .pill{padding:.125rem}
-.navbar[data-min] .chip{padding:.3rem .8125rem; font-size:.75rem}
+.navbar[data-min] .chip{padding:.3125rem .875rem}
+.navbar[data-min] .lbl{display:none}
 
 /* THE GLASS IS AN ENHANCEMENT AND FAILS TO A SOLID SURFACE, never to a transparent one -- a pill
    with no ground floating over scrolling text is unreadable rather than merely plain. The solid
@@ -1163,16 +1179,47 @@ details[open] > summary .disc{transform:rotate(90deg)}
     return Boolean(view && view.ok && view.week && view.week.days && view.week.days.length);
   }
 
+  // THE TWO TAB MARKS, drawn here rather than fetched, and the only marks on this page that are
+  // not from the calvin.sg set. That set is closed and ships nothing meaning "today" or "the
+  // week", and Apple's guidance for a tab bar is explicit that a tab carries a symbol above its
+  // label -- so the bar borrows its marks from the platform's vocabulary the same way it borrows
+  // its material. A clock for the session in front of you, a calendar for the seven days.
+  // They reach nothing outside `.navbar`.
+  var TAB_PATHS = {
+    today: "M12 3a9 9 0 100 18 9 9 0 000-18zM12 7.75V12.25l3 1.75",
+    week: "M6.5 4h11A2.5 2.5 0 0120 6.5v11a2.5 2.5 0 01-2.5 2.5h-11A2.5 2.5 0 014 17.5v-11A2.5 2.5 0 016.5 4zM4 9.5h16M8 2.75v2.5M16 2.75v2.5",
+  };
+
+  function tabMark(name) {
+    var NS = "http://www.w3.org/2000/svg";
+    var svg = document.createElementNS(NS, "svg");
+    svg.setAttribute("class", "tabmark");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    // The label beneath it is the accessible name, so the mark is decoration to the tree -- the
+    // same idiom the sport marks and the theme control's sun and moon already use.
+    svg.setAttribute("aria-hidden", "true");
+    svg.setAttribute("focusable", "false");
+    var path = document.createElementNS(NS, "path");
+    path.setAttribute("d", TAB_PATHS[name]);
+    svg.appendChild(path);
+    return svg;
+  }
+
   /**
    * @param label     the destination's own name, and the same string its heading uses
    * @param onClick   what it does
    * @param isCurrent whether this is the screen already showing. Optional, and only the
    *                  navigation passes it -- `aria-current` is what tells a screen reader which
-   *                  of the two you are on, and the inverted fill is what tells everyone else.
+   *                  of the two you are on, and the tint is what tells everyone else.
+   * @param mark      which tab mark sits above the label. Optional for the same reason: the
+   *                  argument list grows rightward so `navChip("Today", fn)` still reads and
+   *                  still works for any caller that only wants a labelled control.
    */
-  function navChip(label, onClick, isCurrent) {
-    var b = el("button", "chip", label);
+  function navChip(label, onClick, isCurrent, mark) {
+    var b = el("button", "chip");
     b.type = "button";
+    if (mark) b.appendChild(tabMark(mark));
+    add(b, el("span", "lbl", label));
     if (isCurrent) b.setAttribute("aria-current", "page");
     b.addEventListener("click", onClick);
     return b;
@@ -1184,8 +1231,8 @@ details[open] > summary .disc{transform:rotate(90deg)}
   function renderNav() {
     if (!hasWeek()) { navEl.hidden = true; pillEl.textContent = ""; return; }
     pillEl.textContent = "";
-    add(pillEl, navChip("Today", function () { show("today"); }, screen === "today"));
-    add(pillEl, navChip("The week", function () { show("week"); }, screen === "week"));
+    add(pillEl, navChip("Today", function () { show("today"); }, screen === "today", "today"));
+    add(pillEl, navChip("Week", function () { show("week"); }, screen === "week", "week"));
     navEl.hidden = false;
   }
 
@@ -1543,9 +1590,9 @@ details[open] > summary .disc{transform:rotate(90deg)}
     if (view.weekLabel) add(h, el("span", "week", view.weekLabel));
     add(root, h);
 
-    // The control that opened this screen says "The week" and so does its heading. Two strings
+    // The control that opened this screen says "Week" and so does its heading. Two strings
     // that have to agree are one string.
-    add(root, el("h1", "weekhead", "The week"));
+    add(root, el("h1", "weekhead", "Week"));
     if (typeof w.daysToKiprun === "number" && w.daysToKiprun >= 0) {
       add(root, el("p", "race", w.daysToKiprun === 0
         ? "Kiprun is today."
@@ -1597,7 +1644,7 @@ details[open] > summary .disc{transform:rotate(90deg)}
     // The screen's name goes on the LANDMARK rather than into a visible eyebrow. It gives the
     // region the name the accessibility guidance asks for, at both ends of the navigation, without
     // adding a word above the one number this design exists to keep loudest.
-    root.setAttribute("aria-label", next === "week" ? "The week" : "Today");
+    root.setAttribute("aria-label", next === "week" ? "Week" : "Today");
     setBackButton(next === "week");
     paint();
     // A swapped screen starts at its own top. Without this, returning from the foot of a scrolled
@@ -1626,7 +1673,7 @@ details[open] > summary .disc{transform:rotate(90deg)}
   //
   // !! THE DEEP LINK IS HONOURED ONLY WHEN THERE IS A WEEK TO SHOW. This is also the error path,
   // and an error state has exactly one screen -- opening a refusal with the back arrow lit and an
-  // aria-label reading "The week" would describe a screen that is not on the page.
+  // aria-label reading "Week" would describe a screen that is not on the page.
   // Which screen a deep link asked for. TWO SOURCES, and the SIGNED one wins.
   //
   // !! The URL copy was the only source until a real launch opened on `today` with `?startapp=week`
@@ -1642,7 +1689,7 @@ details[open] > summary .disc{transform:rotate(90deg)}
   function render(v) {
     view = v;
     screen = v && v.ok ? screenFor(startParamOf(v)) : "today";
-    root.setAttribute("aria-label", screen === "week" ? "The week" : "Today");
+    root.setAttribute("aria-label", screen === "week" ? "Week" : "Today");
     setBackButton(screen === "week");
     paint();
   }

@@ -20,7 +20,7 @@ changes what I actually do.
 
 ## Overview
 
-Two screens. **Today** opens first and answers the 6am question; **The week** is one tap away and
+Two screens. **Today** opens first and answers the 6am question; **Week** is one tap away and
 carries the rest of the plan, so I no longer open the artifact to see what Thursday looks like.
 
 The two never disagree about the same day. **Today** draws today with everything the week screen
@@ -33,7 +33,7 @@ the poorer of the two.
 | **Today, in full** | The rest of the day under it, drawn exactly as the week screen draws the same day: the day's character, every other session with its time, status, figures, place and rule, and the bedtime that closes the night |
 | **After today** | The next thing beyond today, so I can see whether tonight commits me to a 6am tomorrow, and how much else is in the window |
 | **Neither** | An honest line. A rest day says so; a plan that does not cover today says *that*, separately from a plan that is merely old |
-| **The week** | All seven days: the volume against its ceiling, each day's character and bedtime, and every session with its times, place, figures, the rule decided before the start, and why it exists. Days already spent collapse to one line — what a finished day settled is what the weekly artifact is for |
+| **Week** | All seven days: the volume against its ceiling, each day's character and bedtime, and every session with its times, place, figures, the rule decided before the start, and why it exists. Days already spent collapse to one line — what a finished day settled is what the weekly artifact is for |
 
 Getting back is Telegram's own back arrow, **and** a `Today` control the page draws itself, at the
 top of the week and again at the foot. That redundancy is deliberate and was learned the hard way:
@@ -192,7 +192,7 @@ successful `--put` also sends one message, with two buttons that open this app o
 | | |
 |---|---|
 | **Today** | `t.me/calvindotsg_bot/training?startapp=today` |
-| **The week** | `t.me/calvindotsg_bot/training?startapp=week` |
+| **Week** | `t.me/calvindotsg_bot/training?startapp=week` |
 
 Telegram delivers `startapp` twice: to the page as `tgWebAppStartParam` in the URL, and inside the
 signed launch data as `start_param`. The page reads both and prefers the signed one, which is the
