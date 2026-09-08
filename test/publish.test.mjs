@@ -267,3 +267,93 @@ test("a plainly-written week trips none of the three new gates", () => {
   assert.equal(r.err.includes("cite the store"), false);
   assert.equal(r.err.includes("spelling it out"), false);
 });
+
+// ── THE LENGTH COUNTERS ──────────────────────────────────────────────────────────────────────
+//
+// MEASUREMENT, NOT A GATE. These ship before any threshold does, because the routine that runs
+// this publisher every night at 23:40 is pure transport and cannot fix what a refusal objects to.
+// The thresholds come later, derived from what these report over real weeks.
+//
+// 🔴 AND THIS IS THE FIRST TEST IN THE SUITE THAT FEEDS THE PUBLISHER HTML. Every gate before it
+// was exercised on a bare JSON week-state -- which `extractWeekState` accepts, and which skips
+// everything that reads the page. A counter nobody runs on an artifact is a counter that reports
+// whatever it likes about one.
+
+/** The smallest artifact that is still an artifact: two <h2> sections around a real week-state. */
+function artifact(ws, prose = "") {
+  return `<!doctype html><html><head><title>W</title></head><body>
+<h2>The week</h2><p>Monday. ${prose}</p>
+<h2>The arithmetic</h2><p>Forty four point two three kilometres against a ceiling.</p>
+<script type="application/json" id="week-state">${JSON.stringify(ws)}</script>
+</body></html>`;
+}
+
+function publishHtml(ws, name, prose = "") {
+  const file = join(TMP, `${name}.html`);
+  writeFileSync(file, artifact(ws, prose));
+  const r = spawnSync(process.execPath, [PUBLISH, file], {
+    encoding: "utf8", cwd: ROOT, env: sandboxEnv(join(TMP, "bin")),
+  });
+  return { code: r.status, out: r.stdout ?? "", err: r.stderr ?? "" };
+}
+
+test("the counters name the longest field AND the path it sits at", () => {
+  const ws = weekState();
+  ws.days[0].sessions[0].travel = "x".repeat(300);
+  const r = publish(ws, "counter-longest");
+
+  assert.equal(r.code, 0, r.err);
+  // The path is the half that matters: "travel is 300 chars" sends you looking through seven days.
+  assert.match(r.out, /travel\s+longest\s+300 chars\s+days\[0\]\.sessions\[0\]\.travel/);
+});
+
+test("a field that is absent reports as absent rather than as zero-length", () => {
+  // An unwritten field and an empty one are different facts, and `pick` collapses empty to absent
+  // upstream. Printing "0 chars" for both would report a week as tighter than it is.
+  const r = publish(weekState(), "counter-absent");
+  assert.equal(r.code, 0, r.err);
+  assert.match(r.out, /travel\s+longest\s+0 chars\s+\(absent\)/);
+});
+
+test("words per session is counted across every field, and names the worst one", () => {
+  const ws = weekState();
+  ws.days[0].sessions[0].intention = "one two three four five six seven eight nine ten";
+  ws.days[0].sessions[0].travel = "eleven twelve thirteen fourteen fifteen";
+  const r = publish(ws, "counter-session");
+
+  assert.equal(r.code, 0, r.err);
+  // Field-agnostic on purpose: every per-field cap can be evaded by moving a sentence next door.
+  assert.match(r.out, /words per session\s+max \d+\s+2026-08-31 6 km with Bryan/);
+});
+
+test("an artifact gets its rendered prose counted, by <h2> and not by class name", () => {
+  // Counted from structure rather than styling: two consecutive weeks of the real artifact shared
+  // only 13 of ~48 CSS classes, so a class-based counter silently reports zero on a redraw.
+  const r = publishHtml(weekState(), "counter-html", "alpha beta gamma delta epsilon");
+
+  assert.equal(r.code, 0, r.err);
+  assert.match(r.out, /rendered words on the page\s+\d+/);
+  assert.match(r.out, /section\s+\d+\s+The week/);
+});
+
+test("a JSON input SAYS the prose counters did not run, rather than passing quietly", () => {
+  // `extractWeekState` accepts a bare JSON file and the usage line advertises it, so every prose
+  // measurement is unreachable on that input. Silence there reads exactly like a clean page.
+  const r = publish(weekState(), "counter-json-bypass");
+
+  assert.equal(r.code, 0, r.err);
+  assert.match(r.out, /prose counters SKIPPED — this input is JSON, not an artifact/);
+  assert.equal(r.out.includes("rendered words on the page"), false);
+});
+
+test("nothing the counters measure can change the exit code", () => {
+  // The whole point of shipping measurement first: a week that would fail every future threshold
+  // still publishes tonight. If this test ever goes red, a gate was added without a decision.
+  const ws = weekState();
+  ws.days[0].sessions[0].travel = "y".repeat(2000);
+  ws.days[0].sessions[0].intention = "z ".repeat(500);
+  const r = publish(ws, "counter-no-gate");
+
+  assert.equal(r.code, 0, "measurement must never refuse");
+  assert.match(r.out, /measurement only — nothing below refuses or warns/);
+});
