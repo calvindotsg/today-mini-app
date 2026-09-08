@@ -10,7 +10,7 @@ cost a session.
 
 | Task | Command |
 |---|---|
-| Test | `npm test` (178 tests) — **serialised**, see below |
+| Test | `npm test` (179 tests) — **serialised**, see below |
 | Auth suite only | `npm run test:auth` (Telegram) · `npm run test:web` (browser/PWA) |
 | Dev server | `npm run dev` |
 | Deploy | `npm run deploy` — CI also does this on merge to `main`, **behind an approval** (trap 2) |
@@ -38,10 +38,10 @@ a Claude session ──► scripts/publish.mjs ──► Cloudflare KV ──►
 | `scripts/publish.mjs` | The publisher, and **five content gates**. Refusals: raw markup in a published field; a **wiki path or forecast id** (`models/pace-group`, `F-2026-09-04-a`) — bookkeeping he cannot open; an **abbreviation not spelled out**, satisfied by saying it in full in the same field. Warnings: anything reading like a revision of an earlier plan, and this store's **private vocabulary** (*board*, *anchor*, *dial*). 🔴 The split is the design — an exact shape may refuse, an English guess may only warn. |
 | `CONTRACT.md` | The `week-state` shape, **measured** rather than specified. Read before changing `reduce.js`. |
 
-**Two screens, one document.** `Today` answers the 6am question and is what the app opens on; `The
-week` carries all seven days and is reached by a chip. There is no second request and no route for
-the second screen — the whole week already crosses the auth boundary in the one `POST /s` response,
-so there is nothing extra to get the access control right on.
+**Two screens, one document.** `Today` answers the 6am question and is what the app opens on; `Week`
+carries all seven days and is reached from the navigation bar. There is no second request and no
+route for the second screen — the whole week already crosses the auth boundary in the one `POST /s`
+response, so there is nothing extra to get the access control right on.
 
 🔴 **The two screens must not disagree about the same day, and the guarantee is STRUCTURAL.**
 `renderTodayInFull` in `src/app.html` draws today by calling `renderSlot` and `renderBed` — the
@@ -56,12 +56,28 @@ cannot be matched on `at` (optional) or on `title` (not unique within a day).
 its own day card, so the two look different there on purpose — see trap 4 for the two independent
 reasons that field stays refused.
 
-🔴 **The way back is drawn TWICE on purpose** — Telegram's arrow, plus a `Today` chip at the top of
-the week and again at its foot. That looks like the redundancy the design system tells you to cut,
-and it is not. The in-page control was once gated on the client being unable to draw an arrow; on a
-real iPhone that gate was open, the arrow rendered and was inert, and the week had no exit. See the
-comment above `installReceiver` in `src/app.html` for why the arrow was dead. **A way back does not
-get to depend on a bridge.**
+🔴 **The way back must never depend on a bridge.** It was once gated on the client being unable to
+draw Telegram's arrow; on a real iPhone that gate was open, the arrow rendered and was **inert**, and
+the week had no exit. See the comment above `installReceiver` in `src/app.html` for why it was dead.
+
+⚠️ **What satisfies that rule CHANGED in #27, so the old wording no longer describes the app.** It
+used to be two in-page `Today` chips, at the head and the foot of the week. Both are gone. A fixed
+**Liquid Glass navigation bar** now sits in the thumb zone on both screens — drawn by this page, from
+this page's own data, on screen at every scroll position. Telegram's arrow is still set up and still
+routed, so the way back is still drawn twice; the second copy is simply no longer scroll-dependent.
+
+🔴 **`renderNav` hides the bar on `!view.ok` and NOTHING ELSE**, and that line is load-bearing in two
+directions. Apple: *"Don't disable or hide tab bar buttons, even when their content is unavailable…
+If a section is empty, explain why."* So a published plan with **no days** keeps both tabs and the
+Week screen explains itself. A **refusal** has no sections at all, and there a tab is a control that
+lies — this page's own rule, from the past-day disclosure. Reaching for `hasWeek()` here instead
+silently takes Apple's case away; `worker.http.test.mjs` pins the exact condition for that reason.
+
+🔴 **`.navbar[hidden]{display:none}` is not redundant with the attribute — it IS the attribute.**
+`hidden` is a UA rule at the lowest specificity there is, and `.navbar` sets `display:flex` on a
+class, which beats it. Without that rule `navEl.hidden = true` sets the attribute and does nothing,
+and the refusal screen draws an empty nine-pixel glass sliver. It shipped that way in #27, was live
+on both routes, and 178 passing tests could not see it because nothing here renders the DOM.
 
 Two routes for Telegram: `GET /` serves the document; `POST /s` returns the week as JSON to a
 validated launch and `401` with a **zero-byte body** to everyone else.
