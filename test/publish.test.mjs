@@ -513,6 +513,69 @@ test("numbers is counted and never refused, because a gym class publishes none",
   assert.match(r.out, /numbers\s+0\/1\s+counted, never refused/);
 });
 
+// ══ the give-way floor ═══════════════════════════════════════════════════════════════════════
+// 🔴 A LADDER WITH NO FLOOR TELLS THE BOX WHAT TO SACRIFICE AND NEVER SAYS WHERE TO STOP.
+// artifact-shape.md keeps "If something has to give" untouched because the Hermes box carries the
+// week mid-flight and cannot ask. On 2026-09-08 a redraw cut three of its four rungs and the whole
+// "Never these" floor, and a repo-wide grep found those lines in no .md file at all.
+
+/** An artifact whose second section is a give-way list with the given body. */
+function giveWay(body, name) {
+  const ws = weekState();
+  const file = join(TMP, `${name}.html`);
+  writeFileSync(file, `<!doctype html><html><head><title>W</title></head><body>
+<h2>The week</h2><p>Monday, and a run in the evening.</p>
+<h2>If something has to give</h2>${body}
+<script type="application/json" id="week-state">${JSON.stringify(ws)}</script>
+</body></html>`);
+  const r = spawnSync(process.execPath, [PUBLISH, file, "--strict"], {
+    encoding: "utf8", cwd: ROOT, env: sandboxEnv(join(TMP, "bin")),
+  });
+  return { code: r.status, out: r.stdout ?? "", err: r.stderr ?? "" };
+}
+
+test("a give-way list that states its floor publishes", () => {
+  const r = giveWay("<ol><li>Friday's top-up first.</li></ol>" +
+    "<p>Never these: Sunday's long run, and the gap between the gym and the evening run.</p>",
+    "floor-present");
+  assert.equal(r.code, 0, r.err);
+});
+
+test("a give-way list with no floor is REFUSED, and the finding names the section", () => {
+  const r = giveWay("<ol><li>Friday's top-up first.</li><li>Thursday's last two reps.</li></ol>",
+    "floor-absent");
+  assert.equal(r.code, 1, "a list of sacrifices with no stated floor must not ship");
+  assert.match(r.err, /lists what gives way and never says what does not/);
+  assert.match(r.err, /If something has to give/);
+});
+
+test("\"do not cut X\" is a RUNG and does not count as a floor", () => {
+  // 🔴 THE REGRESSION THIS PINS. The first draft of the check accepted /do not (cut|touch|drop)/,
+  // which matched the rung "Do not cut Thursday morning" — so it passed the very artifact it was
+  // written to refuse. A rung is a thing that may still go, just later. A floor never goes.
+  const r = giveWay("<ol><li>Friday's top-up first.</li>" +
+    "<li>Do not cut Thursday morning, it saves 25 points and the record says do not.</li></ol>",
+    "floor-rung-only");
+  assert.equal(r.code, 1, "a rung worded as a prohibition is still a rung");
+});
+
+test("a week that names the section differently warns rather than refusing", () => {
+  // The page's layout is redrawn every week and SKILL.md refuses to give a template, so an
+  // unmatched heading must not be a refusal — it is a prompt to check by eye.
+  const ws = weekState();
+  const file = join(TMP, "floor-unnamed.html");
+  writeFileSync(file, `<!doctype html><html><head><title>W</title></head><body>
+<h2>The week</h2><p>Monday, and a run in the evening.</p>
+<h2>Priorities</h2><ol><li>Friday's top-up first.</li></ol>
+<script type="application/json" id="week-state">${JSON.stringify(ws)}</script>
+</body></html>`);
+  const r = spawnSync(process.execPath, [PUBLISH, file, "--strict"], {
+    encoding: "utf8", cwd: ROOT, env: sandboxEnv(join(TMP, "bin")),
+  });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /no give-way section found by heading/);
+});
+
 test("the default path names no session, because a cron reports its whole stdout", () => {
   // 🔴 A PRIVACY RULE THAT LIVES IN ANOTHER SYSTEM'S PROMPT, PINNED HERE WHERE IT CAN FAIL.
   // `training-week-publish` is instructed to report this script's FULL stdout, and its own prompt
