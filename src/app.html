@@ -211,6 +211,22 @@ body{
    what keeps / and /web/ byte-identical, which is the whole deploy proof. */
 :root[data-installed] body{padding-top:max(4.75rem, calc(env(safe-area-inset-top) + 1.25rem))}
 
+/* !! TEMPORARY DIAGNOSTIC. DELETE THIS RULE, ITS CLASSES AND THE BLOCK THAT BUILDS IT.
+   A ruler pinned to the TOP OF THE VIEWPORT -- not to the page's padded content -- so one
+   screenshot from the installed app says how far iOS's own top blur reaches down into the page.
+   Measured from Calvin's screenshot: iOS already holds this page 47px below the status bar and
+   reports env(safe-area-inset-top) as 0, so the status bar is NOT overlapping the page. What ate
+   the header was the blur, and its depth is the one number no browser here can produce.
+   Fine 2px stripes on the left because blur destroys a fine pattern visibly; labels on the right
+   say the offset in CSS pixels. The change that reads this screenshot removes all of it. */
+.ruler{position:fixed; top:0; left:0; right:0; height:10rem; z-index:99; pointer-events:none}
+.ruler .st{position:absolute; top:0; bottom:0; left:0; width:50%;
+  background:repeating-linear-gradient(to bottom, black 0 2px, white 2px 4px)}
+.ruler b{position:absolute; right:0; width:50%; height:1rem; text-align:center;
+  font:700 .6875rem/1rem var(--sans); color:white; background:firebrick}
+.r0{top:0}.r16{top:1rem}.r32{top:2rem}.r48{top:3rem}.r64{top:4rem}
+.r80{top:5rem}.r96{top:6rem}.r112{top:7rem}.r128{top:8rem}.r144{top:9rem}
+
 /* THE ONLY TWO PLACES A TRACKED-OUT CAPITAL RUN SURVIVES. It was on eleven, across the week
    label, every card's kind, the clock's own label, both definition terms and the why block --
    which is a capital run above almost every group on the screen, and the commonest thing that
@@ -1953,6 +1969,15 @@ details[open] > summary .disc{transform:rotate(90deg)}
       docEl.setAttribute("data-installed", "");
     }
   } catch (e) { /* no matchMedia is no installed app; the page keeps its own top margin */ }
+
+  // !! TEMPORARY DIAGNOSTIC. DELETE WITH THE RULE IT DRAWS.
+  // /web/ only, so the Telegram screen is untouched while this is live.
+  if (web) {
+    var ruler = el("div", "ruler");
+    add(ruler, el("span", "st"));
+    for (var ri = 0; ri < 10; ri++) add(ruler, el("b", "r" + (ri * 16), String(ri * 16)));
+    document.body.appendChild(ruler);
+  }
 
   // SKIPPED ON /web/, NOT REPLACED WITH A SECOND EARLY RETURN. There is no launch to have there --
   // the reader is proven by a first-party cookie instead. Returning here would leave them on a
