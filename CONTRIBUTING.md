@@ -24,10 +24,23 @@ hunting through `src/initdata.js` instead of at the missing file. The example ho
 token; the suite mints its own `initData` against it, so no real bot credential is needed to
 exercise every auth path.
 
+⚠️ **The example gained four entries for the browser way in** — `SESSION_SECRET`, `ALLOWED_EMAIL`,
+`ACCESS_AUD` and `ACCESS_TEAM_DOMAIN`. If your `.dev.vars` predates them, copy the example again.
+All four are fakes like the two above: the suite mints its own Access tokens against a local key
+server and its own session cookies with that key, so no real credential is needed here either, and
+this repository still carries no personal identifier.
+
+They gate **`/web/*` and nothing else** — `worker.js` keeps `configuredWeb` separate from
+`configured` deliberately, so a stale `.dev.vars` still passes the Telegram suite and only the
+browser tests go red. Please keep that separation if you add a secret: folding a new one into
+`configured` turns a missing local file into the confusing `401 !== 200` above for every clone that
+exists.
+
 | Command | What it does |
 | --- | --- |
-| `npm test` | The whole suite, 125 tests |
-| `npm run test:auth` | Just the HTTP auth suite, against the real Worker in the real runtime |
+| `npm test` | The whole suite, 178 tests. **Serialised** — two suites each spawn a real `wrangler dev`, and racing them makes startup exceed its 90-second wait |
+| `npm run test:auth` | Just the Telegram HTTP auth suite, against the real Worker in the real runtime |
+| `npm run test:web` | The same, for the browser and home-screen way in |
 | `npm run dev` | `wrangler dev` on the emulated KV |
 | `npm run deploy` | Ships to `today.calvin.sg`. CI does this on merge — see below |
 | `npm run publish:week` | Reduces a weekly artifact and writes it to KV |

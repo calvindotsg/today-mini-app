@@ -2,13 +2,16 @@
   "name": "today-mini-app",
   "private": true,
   "type": "module",
-  "description": "today.calvin.sg — a Telegram Mini App showing the session in front of me and the rest of the day",
+  "description": "today.calvin.sg \u2014 a Telegram Mini App showing the session in front of me and the rest of the day",
   "scripts": {
-    "test": "node --test test/*.test.mjs",
+    "test": "node --test --test-concurrency=1 test/*.test.mjs",
     "test:auth": "node --test test/worker.http.test.mjs",
     "dev": "npx --yes wrangler@4.127.1 dev",
     "deploy": "npx --yes wrangler@4.127.1 deploy",
-    "publish:week": "node scripts/publish.mjs"
+    "publish:week": "node scripts/publish.mjs",
+    "test:web": "node --test test/webauth.http.test.mjs"
   },
-  "engines": { "node": ">=20" }
+  "engines": {
+    "node": ">=20"
+  }
 }

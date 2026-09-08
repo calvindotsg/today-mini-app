@@ -87,3 +87,102 @@ export function sandboxBin(dir) {
 export function sandboxEnv(dir) {
   return { ...process.env, PATH: `${sandboxBin(dir)}${delimiter}${process.env.PATH}` };
 }
+
+// ── the browser / home-screen way in ─────────────────────────────────────────────────────────
+//
+// Same principle as mintInitData above, and for the same reason: these mint credentials the way
+// CLOUDFLARE and the cookie format do, using node's crypto directly, never by calling access.js or
+// session.js. A suite that builds its fixtures with the checker's own code agrees with the checker
+// by construction and cannot catch it being wrong -- which is precisely how the `signature` bug
+// shipped past 34 green tests.
+
+// STAND-INS, deliberately not the real values, so this repository still carries no personal
+// identifier and could be made public without a redaction pass. They match .dev.vars.example.
+export const FAKE_ALLOWED_EMAIL = "someone@example.com";
+export const FAKE_SESSION_SECRET = "local-dev-session-signing-key-not-a-real-one";
+export const FAKE_ACCESS_AUD = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+export const FAKE_TEAM_DOMAIN = "example-team.cloudflareaccess.com";
+
+const b64u = (buf) => Buffer.from(buf).toString("base64url");
+
+/** An RSA signing key plus the public JWK a JWKS endpoint would publish for it. */
+export async function accessKeypair(kid = "test-key-1") {
+  const { generateKeyPairSync } = await import("node:crypto");
+  const { publicKey, privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+  const jwk = publicKey.export({ format: "jwk" });
+  return { kid, privateKey, jwk: { ...jwk, kid, alg: "RS256", use: "sig" } };
+}
+
+/** The body Cloudflare's /cdn-cgi/access/certs returns. */
+export function jwksBody(...keys) {
+  return JSON.stringify({ keys: keys.map((k) => k.jwk) });
+}
+
+/**
+ * Mint an Access JWT the way Cloudflare mints one.
+ *
+ * Every knob here exists so a test can build a token that is WRONG IN EXACTLY ONE WAY and prove
+ * the checker refuses it: a different audience (which is how a token for one of the account's
+ * OTHER Access applications is simulated -- same issuer, same signing key, same everything else),
+ * a missing `exp`, a swapped algorithm, a tampered payload.
+ */
+export async function mintAccessJwt(key, {
+  email = FAKE_ALLOWED_EMAIL,
+  aud = FAKE_ACCESS_AUD,
+  teamDomain = FAKE_TEAM_DOMAIN,
+  iss = null,
+  nowSec = Math.floor(Date.now() / 1000),
+  expSec = null,
+  nbfSec = null,
+  alg = "RS256",
+  kid = null,
+  audAsString = false,
+  omit = [],
+  tamper = false,
+  extraClaims = {},
+} = {}) {
+  const { sign } = await import("node:crypto");
+  const header = { alg, kid: kid ?? key.kid, typ: "JWT" };
+  const claims = {
+    aud: audAsString ? aud : [aud],
+    email,
+    iss: iss ?? `https://${teamDomain}`,
+    iat: nowSec,
+    exp: expSec ?? nowSec + 3600,
+    sub: "test-subject",
+    ...(nbfSec === null ? {} : { nbf: nbfSec }),
+    ...extraClaims,
+  };
+  for (const k of omit) delete claims[k];
+  const signingInput = `${b64u(JSON.stringify(header))}.${b64u(JSON.stringify(claims))}`;
+  // `alg: none` carries no signature at all -- the whole point of that attack.
+  const sig = alg === "none" ? "" : b64u(sign("sha256", Buffer.from(signingInput), key.privateKey));
+  const token = `${signingInput}.${sig}`;
+  if (!tamper) return token;
+  // Swap the claims while keeping the signature, which is what a payload edit looks like on the wire.
+  const parts = token.split(".");
+  const bad = { ...claims, email: "someone-else@example.com" };
+  return `${parts[0]}.${b64u(JSON.stringify(bad))}.${parts[2]}`;
+}
+
+/**
+ * Mint a session cookie value with node's HMAC, mirroring session.js's wire format without
+ * importing it. `v1.<iatMs>.<expMs>.<b64url(email)>.<mac>`, MAC over the raw prefix.
+ */
+export async function mintSessionCookie({
+  email = FAKE_ALLOWED_EMAIL,
+  secret = FAKE_SESSION_SECRET,
+  nowMs = Date.now(),
+  iatMs = null,
+  ttlMs = 30 * 24 * 3_600_000,
+  version = "v1",
+  corruptMac = false,
+  fields = null,
+} = {}) {
+  const { createHmac } = await import("node:crypto");
+  const iat = iatMs ?? nowMs;
+  const payload = fields ?? `${version}.${iat}.${nowMs + ttlMs}.${b64u(Buffer.from(email, "utf8"))}`;
+  let mac = createHmac("sha256", secret).update(payload).digest("base64url");
+  if (corruptMac) mac = (mac[0] === "A" ? "B" : "A") + mac.slice(1);
+  return `${payload}.${mac}`;
+}

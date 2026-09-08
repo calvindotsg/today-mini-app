@@ -10,8 +10,8 @@ cost a session.
 
 | Task | Command |
 |---|---|
-| Test | `npm test` (125 tests) |
-| Auth suite only | `npm run test:auth` |
+| Test | `npm test` (178 tests) — **serialised**, see below |
+| Auth suite only | `npm run test:auth` (Telegram) · `npm run test:web` (browser/PWA) |
 | Dev server | `npm run dev` |
 | Deploy | `npm run deploy` — CI also does this on merge to `main`, **behind an approval** (trap 2) |
 | Publish a week | `node scripts/publish.mjs <week.html> --put` |
@@ -29,6 +29,8 @@ a Claude session ──► scripts/publish.mjs ──► Cloudflare KV ──►
 |---|---|
 | `src/worker.js` | Routes, auth wiring, security headers. The whole server. |
 | `src/initdata.js` | Telegram signature validation. Deliberately small so it can be re-read against the docs in a minute — do not spread it across helpers. |
+| `src/access.js` | Cloudflare Access JWT validation, for the browser way in. Small for the same reason. It PROVES the token; `worker.js` decides whose it is. 🔴 The account runs other Access apps on the same issuer and signing keys, so `aud` is the only thing separating their tokens from this one. |
+| `src/session.js` | The first-party session cookie the Worker mints after Access. Two lifetimes: 30-day sliding, 90-day hard ceiling anchored to first sign-in. |
 | `src/reduce.js` | `week-state` → the published payload. Four **allowlists**, so a new upstream field cannot start being published by accident. `BED_FIELDS` is one level down, because `pick` does not recurse. |
 | `src/view.js` | payload + a clock → what the two screens show. Pure, no DOM. |
 | `src/app.html` | Both screens, in the calvin.sg design system. Templated per request with a CSP nonce. |
@@ -61,8 +63,21 @@ real iPhone that gate was open, the arrow rendered and was inert, and the week h
 comment above `installReceiver` in `src/app.html` for why the arrow was dead. **A way back does not
 get to depend on a bridge.**
 
-Two routes and nothing else: `GET /` serves the document; `POST /s` returns the week as JSON to a
-validated launch and `401` with a **zero-byte body** to everyone else. Any other path is `404`.
+Two routes for Telegram: `GET /` serves the document; `POST /s` returns the week as JSON to a
+validated launch and `401` with a **zero-byte body** to everyone else.
+
+**And a second way in, for a browser and an iOS home-screen app.** Cloudflare Access gates exactly
+ONE path, `GET /web/signin`; the Worker verifies that JWT itself, checks the email, and mints its own
+cookie. `GET /web/` and `POST /web/s` are gated by that cookie alone.
+
+🔴 **`GET /web/` answers 200 in EVERY auth state and never redirects.** It is the installed app's
+`start_url`, and a standalone app has no address bar, no reload and no back button — so a redirect to
+`/web/signin` would hand the launch itself to Access and then to another origin before any gesture,
+leaving a chrome-less error with no way out. Logged out, it serves the same document with no plan
+data and the client draws a *Sign in* link the reader taps.
+
+🔴 **`/` and `/web/` serve a BYTE-IDENTICAL document**, asserted by the suite. The mode is derived on
+the client from `location.pathname` — see "one template token" below. Any other path is `404`.
 
 ## The five traps
 
@@ -71,6 +86,13 @@ validated launch and `401` with a **zero-byte body** to everyone else. Any other
 Gitignored, so absent in every fresh clone and **every new git worktree**. Without
 `cp .dev.vars.example .dev.vars` the happy path fails `401 !== 200`, which reads as an
 access-control regression rather than a missing file.
+
+⚠️ **The example gained four more entries** — `SESSION_SECRET`, `ALLOWED_EMAIL`, `ACCESS_AUD`,
+`ACCESS_TEAM_DOMAIN` — so a `.dev.vars` copied before they existed is missing all four. They gate
+**`/web/*` and nothing else**: `worker.js` keeps `configuredWeb` separate from `configured` for
+exactly this reason, so a stale copy still passes the Telegram suite and only the browser tests go
+red. 🔴 **Do not fold them into `configured`.** That would turn a missing local file into this trap's
+misleading signature for every clone and worktree in existence.
 
 ### 2. Merging is not shipping — the trap MOVED, it did not go away
 
@@ -158,7 +180,39 @@ them and every test still passes while the app admits everyone.
 check (the Ed25519 third-party one). Folding that exclusion into this one fails every real launch
 from a modern client while every hand-minted fixture still passes.
 
+🔴 **The browser way in has the SAME shape, and it is easy to collapse.** `access.js` proves the
+Access JWT; only the `email` comparison in `worker.js` decides whose it is — and that comparison runs
+on **every `/web/*` request**, not just at sign-in. An earlier draft checked it only when minting,
+which made the cookie the authorisation rather than a pointer to it: changing `ALLOWED_EMAIL` or
+deleting the Access policy would then have revoked nothing for thirty days. And `aud` is the only
+thing separating this app's tokens from the account's two Hermes apps, which share an issuer and
+signing keys — so a Hermes token is genuinely Cloudflare-signed. `String(aud).includes()` passes on a
+superstring; it must be an exact match against an element of the array.
+
 ## Things that must not be "simplified"
+
+- 🔴 **ONE TEMPLATE TOKEN IN `src/app.html`, AND IT IS THE NONCE.** `ci.yml:185` and `drift.yml:51`
+  both prove the deploy by hashing the source with only the nonce placeholder normalised, against the
+  live page normalised on `nonce="..."` alone. A SECOND per-request substitution makes those digests
+  disagree for ever: every deploy reports red while shipping fine, and `drift.yml` opens a
+  Deploy-drift issue on every push to `main` — and `drift.yml` is the replacement for trap 2's dead
+  alarm, so that is the whole live shipping alarm gone. Need per-request behaviour in the document?
+  **Derive it on the client** (`location.pathname`), which is also what keeps `/` and `/web/`
+  byte-identical.
+  ⚠️ **This includes COMMENTS.** The Worker substitutes every occurrence in the file, so a comment
+  naming the placeholder gets a fresh random value on each request. That very nearly shipped — inside
+  a comment explaining this rule. `webauth.http.test.mjs` now runs CI's exact comparison locally,
+  because CI would only have caught it after a deploy had already gone red.
+- 🔴 **Two account-level Cloudflare settings can kill the Mini App from outside this repository.**
+  `deny_unmatched_requests` (currently `false`) would start denying `/` and `POST /s`. Read it with
+  `cf zero-trust organizations list`; the remedy is the very next field,
+  `deny_unmatched_requests_exempted_zone_names` — an exempted zone still gates subdomains that DO
+  have an application, so exempting `calvin.sg` keeps `/` and `/s` public while `/web/signin` stays
+  gated. Separately, the Access app's **cookie path attribute** is what keeps `CF_Authorization` off
+  `/` and `/s`; host-scoped by default, it otherwise reaches this Worker on every public request.
+- ⚠️ **`npm test` is serialised (`--test-concurrency=1`) and must stay that way.** Two suites now each
+  spawn a real `wrangler dev`; racing them makes startup exceed the 90-second wait and the whole web
+  suite fails at once, which reads as a Worker fault rather than contention.
 
 - **A route, not a custom domain.** `custom_domain: true` makes Cloudflare create and manage the
   DNS record. The `calvin.sg` zone is managed as code by octoDNS in `calvindotsg/portfolio-v2`,

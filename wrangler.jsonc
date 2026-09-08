@@ -17,7 +17,12 @@
   "routes": [{ "pattern": "today.calvin.sg/*", "zone_name": "calvin.sg" }],
 
   // The HTML files are imported into the Worker as strings and templated per request.
-  "rules": [{ "type": "Text", "globs": ["**/*.html"], "fallthrough": true }],
+  // The icons are imported as bytes -- a Data rule rather than a bundler, so this stays a
+  // repository with no build step and no lockfile.
+  "rules": [
+    { "type": "Text", "globs": ["**/*.html"], "fallthrough": true },
+    { "type": "Data", "globs": ["**/*.png"], "fallthrough": true }
+  ],
 
   "kv_namespaces": [
     { "binding": "WEEK", "id": "c7d4eafc77364e65a8907678076fb2ea" }
