@@ -161,6 +161,23 @@
   --nav-inset:max(var(--sa-bottom, 0px), env(safe-area-inset-bottom), 0.5rem);
 }
 
+/* !! TEMPORARY DIAGNOSTIC, SECOND ATTEMPT. DELETE ALL OF IT.
+   The first ruler was position:fixed and therefore INVISIBLE to the thing it was measuring: iOS 26's
+   scroll edge effect blurs a scroll view's CONTENT, and a fixed element is not part of that content.
+   It read 254.8 crisp at every depth while the header two lines away was visibly out of focus.
+   So this one sits in NORMAL FLOW, as the first thing in the body, with the body's top padding
+   temporarily zeroed so row 0 really is the top of the scroll view.
+   Fine 2px stripes on the left, because a blur destroys a fine pattern where it leaves flat colour
+   looking untouched. Twelve-pixel rows, labelled with their offset, so the depth can be read off
+   directly rather than bracketed. The change that reads this deletes it. */
+.probe{position:relative; height:6rem; margin:0 0 1rem 0}
+.probe .st{position:absolute; top:0; bottom:0; left:0; width:50%;
+  background:repeating-linear-gradient(to bottom, black 0 2px, white 2px 4px)}
+.probe b{position:absolute; right:0; width:50%; height:.75rem; text-align:center;
+  font:700 .625rem/.75rem var(--sans); color:white; background:firebrick}
+.p0{top:0}.p12{top:.75rem}.p24{top:1.5rem}.p36{top:2.25rem}
+.p48{top:3rem}.p60{top:3.75rem}.p72{top:4.5rem}.p84{top:5.25rem}
+
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
 body{
@@ -194,6 +211,8 @@ body{
      the two sources rather than of the margin: whichever source actually knows the inset wins,
      and they never double count because only one is ever non-zero. */
   padding-top:calc(max(env(safe-area-inset-top), var(--sa-top, 0px)) + 1.25rem);
+  /* TEMPORARY: the probe below has to start at the exact top of the scroll view. */
+  padding-top:0;
   padding-right:max(1rem, env(safe-area-inset-right));
   padding-left:max(1rem, env(safe-area-inset-left));
   padding-bottom:calc(var(--nav-h) + var(--nav-inset) + 1.5rem);
@@ -1934,6 +1953,16 @@ details[open] > summary .disc{transform:rotate(90deg)}
   // Deriving it here also means / and /web/ serve BYTE-IDENTICAL
   // bytes, which makes the two documents incapable of drifting apart rather than merely unlikely to.
   var web = location.pathname.indexOf("/web/") === 0;
+
+  // !! TEMPORARY DIAGNOSTIC. DELETE WITH THE RULE IT DRAWS.
+  // Inserted BEFORE #root so it is the first thing in the scroll view, and in flow so the scroll
+  // edge effect can actually reach it -- which is exactly what the fixed version could not do.
+  if (web) {
+    var probe = el("div", "probe");
+    add(probe, el("span", "st"));
+    for (var pi = 0; pi < 8; pi++) add(probe, el("b", "p" + (pi * 12), String(pi * 12)));
+    document.body.insertBefore(probe, document.body.firstChild);
+  }
 
   // !! THE TOP INSET THE STYLESHEET CANNOT SEE. Measured, not reasoned -- see the comment on the
   // body's padding-top. env(safe-area-inset-top) is 0 in this app in both states, so the page has
