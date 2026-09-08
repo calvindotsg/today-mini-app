@@ -315,7 +315,11 @@ test("a field that is absent reports as absent rather than as zero-length", () =
   assert.match(r.out, /travel\s+longest\s+0 chars.*\(absent\)/);
 });
 
-test("words per session is counted across every field, and names the worst one", () => {
+test("words per session is counted across every field, and points at the worst one", () => {
+  // ⚠️ THIS ASSERTION USED TO EXPECT THE SESSION'S TITLE, and that turned out to be the defect
+  // rather than the feature -- the nightly routine reports this stdout into a push notification and
+  // redacts only the `now` line. What the test protects is unchanged: the counter must say WHICH
+  // session, not merely emit a number. It says so by address on the default path now.
   const ws = weekState();
   ws.days[0].sessions[0].intention = "one two three four five six seven eight nine ten";
   ws.days[0].sessions[0].travel = "eleven twelve thirteen fourteen fifteen";
@@ -323,7 +327,7 @@ test("words per session is counted across every field, and names the worst one",
 
   assert.equal(r.code, 0, r.err);
   // Field-agnostic on purpose: every per-field cap can be evaded by moving a sentence next door.
-  assert.match(r.out, /words per session\s+max \d+\s+2026-08-31 6 km with Bryan/);
+  assert.match(r.out, /words per session\s+max \d+\s+2026-08-31 days\[0\]\.sessions\[0\]/);
 });
 
 test("an artifact gets its rendered prose counted, by <h2> and not by class name", () => {
@@ -449,4 +453,30 @@ test("fields on a spent session warn and never refuse", () => {
 
   assert.equal(r.code, 0, "a spent session must never block a publish");
   assert.match(r.out, /field\(s\) on done\/missed\/skipped sessions are published and never drawn/);
+});
+
+test("the default path names no session, because a cron reports its whole stdout", () => {
+  // 🔴 A PRIVACY RULE THAT LIVES IN ANOTHER SYSTEM'S PROMPT, PINNED HERE WHERE IT CAN FAIL.
+  // `training-week-publish` is instructed to report this script's FULL stdout, and its own prompt
+  // says: "Never print the artifact body, any session name, any place ... your final report is
+  // summarised into a push notification on the athlete's phone." It redacts exactly ONE line -- the
+  // `now` line -- because that was the only line naming a session when the prompt was written.
+  //
+  // So any new line here that prints a title puts a name where the routine has no rule for it, and
+  // the routine cannot redact a line nobody told it about. The counters shipped with that defect
+  // and this is what stops it coming back.
+  const ws = weekState();
+  ws.days[0].sessions[0].travel = "x".repeat(300);
+  ws.days[0].sessions[0].title = "Sensitive Place Run with Someone";
+
+  const cron = publish(ws, "no-names-cron");
+  assert.equal(cron.code, 0, cron.err);
+  assert.equal(cron.out.includes("Sensitive Place Run"), false,
+    "the default path must not print a session title anywhere");
+  assert.match(cron.out, /words per session\s+max \d+\s+\S+ days\[0\]\.sessions\[0\]/,
+    "it must still say WHICH session, by address");
+
+  // A person gets the name, because a person has to find the thing.
+  const person = publishStrict(ws, "no-names-person");
+  assert.match(person.err + person.out, /Sensitive Place Run/);
 });

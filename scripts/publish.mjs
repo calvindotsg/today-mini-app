@@ -289,14 +289,29 @@ for (const [path, s] of strings(payload)) {
   if (!prev || s.length > prev.n) fieldMax.set(key, { n: s.length, path });
 }
 
+// 🔴 EVERY SESSION CARRIES A NAME-FREE ADDRESS, and that is not a nicety.
+//
+// `training-week-publish` is told to report this script's FULL stdout, and its own prompt says:
+// "Never print the artifact body, any session name, any place ... your final report is summarised
+// into a push notification on the athlete's phone." It redacts exactly one line -- the `now` line
+// -- because that was the only line naming a session when the prompt was written.
+//
+// So a counter that prints a session TITLE puts a name somewhere the routine has no rule for, and
+// the routine cannot know to redact a line nobody told it about. The title is printed only under
+// --strict, where a person is reading and needs it to find the session; the default path prints
+// `days[1].sessions[1]`, which is the same address the field lines already use.
 const sessionWords = [];
-for (const day of payload.days) {
-  for (const s of day.sessions) {
+for (let di = 0; di < payload.days.length; di++) {
+  const day = payload.days[di];
+  for (let si = 0; si < day.sessions.length; si++) {
+    const s = day.sessions[si];
     let n = 0;
     for (const [, v] of strings(s)) n += words(v);
-    sessionWords.push({ n, title: s.title, date: day.date });
+    sessionWords.push({ n, title: s.title, date: day.date, path: `days[${di}].sessions[${si}]` });
   }
 }
+/** How a session is identified in output. A name only where a person is reading it. */
+const label = (v) => (strict ? `${v.date} ${v.title.slice(0, 44)}` : `${v.date} ${v.path}`);
 sessionWords.sort((a, b) => b.n - a.n);
 let payloadWords = 0;
 for (const [, s] of strings(payload.days)) payloadWords += words(s);
@@ -362,7 +377,7 @@ for (const [path, s] of strings(payload)) {
 }
 for (const s of sessionWords) if (s.n > SESSION_WORDS.warn) overWords.push(s);
 const worst = sessionWords[0];
-console.log(`          words per session  max ${worst ? worst.n : 0}${worst ? `  ${worst.date} ${worst.title.slice(0, 44)}` : ""}`);
+console.log(`          words per session  max ${worst ? worst.n : 0}${worst ? `  ${label(worst)}` : ""}`);
 console.log(`          words across all ${payload.days.length} days  ${payloadWords}`);
 
 if (inputIsArtifact) {
@@ -424,7 +439,7 @@ if (overLimit.length || overWords.length) {
     out(`  ${v.path}: ${v.n} chars (warn ${v.lim.warn}, refuse ${v.lim.refuse})`);
   }
   for (const v of overWords) {
-    out(`  ${v.date} "${v.title.slice(0, 40)}": ${v.n} words (warn ${SESSION_WORDS.warn}, refuse ${SESSION_WORDS.refuse})`);
+    out(`  ${label(v)}: ${v.n} words (warn ${SESSION_WORDS.warn}, refuse ${SESSION_WORDS.refuse})`);
   }
   out("  A field states what is true now. The reason it changed belongs on the plan page,");
   out("  never inside the field -- see reconcile.md section 5 in the wiki.");
