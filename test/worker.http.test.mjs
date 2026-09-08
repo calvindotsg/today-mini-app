@@ -346,6 +346,32 @@ test("the navigation can actually be hidden, not merely marked hidden", async ()
     "only a refusal hides the bar -- an empty week keeps it, and explains itself");
 });
 
+// The scroll edge effect is the ONE gradient on a page whose design system has none, so it reads
+// as a stray decoration and is exactly the kind of rule a later pass deletes for consistency.
+// Apple's guidance is that it is not decorative -- it is what keeps a floating control distinct
+// from the content scrolling behind it -- and the reason it exists here was measured on a phone:
+// the bar was eating digits out of number-dense prose. Neither of those facts is visible from the
+// CSS, so the rule gets an assertion standing on it.
+//
+// A source-text assertion is the ONLY form available: nothing in this suite renders the DOM, and
+// `get styles` cannot address a pseudo-element even in a browser.
+test("the bar keeps its scroll edge effect, which is not decoration", async () => {
+  const res = await fetch(`${BASE}/`);
+  const body = await res.text();
+  // PIN THE DECLARATION, NOT THE SELECTOR. `.navbar::before` appears TWICE -- once for the effect
+  // and once in the forced-colours block that removes it -- so a bare selector match is satisfied
+  // by the suppression rule alone. Measured: renaming the real rule and leaving the forced-colours
+  // one kept this test GREEN with the effect gone. Match the opening declarations instead.
+  assert.match(body, /\.navbar::before\{\s*content:""; position:fixed/,
+    "the effect is attached to the bar, so it hides with it");
+  assert.match(body, /linear-gradient\(to top,/, "content dissolves upward into the page");
+  // BOTH STOPS ARE THE GROUND. Apple: scroll edge effects "don't block or darken like overlays".
+  // A literal colour here would be a scrim -- the decorative version the guidance rules out, and
+  // wrong in at least one theme besides.
+  assert.doesNotMatch(body.slice(body.indexOf(".navbar::before{"), body.indexOf(".navbar::before{") + 400),
+    /#[0-9a-fA-F]{6}|rgba?\(/, "the effect must be built from --background, never a literal scrim");
+});
+
 test("GET /s is refused -- the app is not reachable without a POSTed launch", async () => {
   await assertDenied(await fetch(`${BASE}/s`), "GET /s");
 });
