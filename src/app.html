@@ -387,6 +387,56 @@ footer.credit{margin-top:1.75rem; color:var(--quieter); font-size:.6875rem}
   pointer-events:none; z-index:10;
   padding:0 1rem;
 }
+
+/* ── the scroll edge effect ────────────────────────────────────────────────────────────────
+   APPLE'S OWN MECHANISM, AND THE SYSTEM DOES NOT SUPPLY IT TO A CUSTOM BAR: "If you use custom
+   bars, you might want to add this effect manually." This one is custom, so it is manual.
+
+   WHAT IT IS FOR, in Apple's words, because it is easy to build the wrong thing: "Only use a
+   scroll edge effect when a scroll view is behind floating interface elements. Scroll edge
+   effects aren't decorative. They DON'T BLOCK OR DARKEN LIKE OVERLAYS; they exist to ensure
+   controls stay visually distinct."
+
+   So this is NOT a scrim. It is the page's own ground, opaque at the foot and fading upward, so
+   content dissolves into the page before it reaches the pill rather than passing behind it
+   half-legible. A darkening overlay would be the decorative version and is the thing the
+   guidance rules out.
+
+   IT IS HERE BECAUSE OF A MEASUREMENT, not a guideline. On Calvin's own iPhone, on his own data,
+   the capsule sat over the "why this session" paragraph and ate characters out of it -- "with
+   the la_t _ilometre at 149 to 153", and in Safari "you top ___ ___ ___" where the text reads
+   "you top out near 137". This app's prose is unusually NUMBER-DENSE, so the characters
+   translucency costs are the ones carrying the meaning: "157, 158 and 157" degrades far worse
+   than ordinary prose does. Increase Contrast only helps a reader who has turned it on; this
+   helps every reader, always, which is why it is the fix and that one was not.
+
+   !! IT IS THE ONLY GRADIENT ON THIS PAGE, and the design system has none anywhere else. That is
+   deliberate rather than an oversight being excused: everything calvin.sg draws is flat, and the
+   one place this file departs is the one component already speaking the platform's language
+   instead of this site's. It introduces NO colour of its own -- both stops are --background, one
+   of them thinned with color-mix -- so it stays inside the palette rule even while it steps
+   outside the flatness one. Apple's own note that the effect is not decorative is the whole
+   justification; spend it here and nowhere else.
+
+   !! Attached to `.navbar` as a pseudo-element so it inherits `[hidden]` and `pointer-events`.
+   A separate element would need both wired by hand and would drift out of step with the bar the
+   first time one of them moved. `position:fixed` anchors it to the viewport rather than to the
+   navbar's own short box, and being out of flow it is not a flex item. */
+.navbar::before{
+  content:""; position:fixed; left:0; right:0; bottom:0;
+  height:calc(var(--nav-h) + var(--nav-inset) + 1.75rem);
+  background:linear-gradient(to top,
+    var(--background) 0%,
+    color-mix(in srgb, var(--background) 82%, transparent) 45%,
+    transparent 100%);
+}
+/* A forced-colours mode replaces every author colour, so the gradient arrives as a flat block of
+   something the reader did not choose -- and it is not needed there, because the pill has already
+   taken a solid Canvas ground and a CanvasText edge, which is the separation this exists to
+   provide. Removed rather than recoloured. */
+@media (forced-colors: active){
+  .navbar::before{display:none}
+}
 /* THIS RULE IS THE ONLY THING THAT MAKES `hidden` WORK ON THIS ELEMENT, and without it the
    attribute is set and does nothing. `hidden` is implemented as a UA-stylesheet `[hidden]{display:
    none}` at the lowest specificity there is, and the rule above sets `display:flex` on a CLASS --
