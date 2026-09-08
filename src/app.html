@@ -43,24 +43,16 @@
   through, the text is light, and in the light theme that is light text on a near-white ground.
   Reasoned, NOT measured, on both halves.
 
-  !! THE REST OF THIS PARAGRAPH USED TO BE WRONG, AND WRONG IN THE DIRECTION THAT COSTS MOST. It
-  said the page does not run under the status bar in a standalone app, so there was no inset to
-  respect and the body's own margin was the floor working rather than a gap -- and it told the next
-  session not to flip this meta to make env(safe-area-inset-top) fire. Calvin's phone says
-  otherwise: in the installed app the header rendered UNDER the Dynamic Island, faded out by iOS's
-  own blur, at scroll zero. The page is composited full screen there and `max(1.25rem, env(...))`
-  did not clear the bar. The floor that fixes it is scoped to the installed app -- see
-  `:root[data-installed]` in the stylesheet and the stamp that sets it near the foot of the script.
+  !! WHAT THE STATUS BAR ACTUALLY DOES HERE WAS MEASURED ON THE PHONE, TWICE, AFTER TWO WRONG
+  GUESSES. It does not overlap the page once the app has settled: iOS gives the webview a frame
+  BELOW the bar, and innerHeight drops from the full 932 to 873 to prove it. But for the first
+  moments of a launch the webview IS the whole screen with the bar drawn over it, and through all
+  of it env(safe-area-inset-top) reports 0 -- so nothing in CSS can tell the two apart. That is
+  handled by syncTopInset and --sa-top; see the body's padding-top.
 
-  !! WHICH of the two causes that is remains UNMEASURED, and the fix cannot settle it. Either iOS
-  reports 0 while compositing full screen -- `viewport-fit=cover` and `default` disagreeing -- or it
-  reports the real inset and the blur reaches below it. Both want more top padding, which is why
-  the fix does not depend on the answer; but a bigger floor and a firing env() draw the SAME
-  screenshot, so the fixed screen is not evidence either way. To settle it, set padding-top to a
-  bare env(safe-area-inset-top) for ONE capture on the phone. Non-zero means the floor was the whole
-  problem. Zero means this meta is the real fault and `black-translucent` is the root fix -- at
-  which point the paragraph above stops being a preference and becomes the thing standing in
-  its way.
+  The lesson worth keeping: two earlier attempts at this reasoned from what `default` is
+  documented to do and both shipped something wrong. The behaviour only became clear when the page
+  was made to print its own numbers.
 -->
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <!--
@@ -187,7 +179,21 @@ body{
      still rendered under the Dynamic Island. The rule immediately below raises it there, and
      ONLY there. Do not raise it here instead: Telegram's route is correct today and a global
      floor would give it sixty pixels of dead space at the top of every screen. */
-  padding-top:max(1.25rem, env(safe-area-inset-top));
+  /* !! THE TOP INSET IS THE ONE EDGE env() DOES NOT KNOW ABOUT, AND THAT IS MEASURED.
+     On Calvin's phone, in the installed app, env(safe-area-inset-top) reports 0 in BOTH of the
+     two states below, while env(safe-area-inset-bottom) correctly reports 34 once settled. So
+     the other three edges can trust env() and this one cannot; --sa-top is what fills the gap,
+     written by syncTopInset near the foot of the script.
+     THE TWO STATES: on launch the webview is briefly the WHOLE screen -- innerHeight 932 of 932
+     -- with the status bar drawn over it, and a moment later iOS settles it to 873 with the page
+     below the bar. Padding sized for one state is wrong in the other, and this is the whole of
+     the defect that was reported as the header being washed out "upon first page open": at 20px
+     it spent that moment underneath the status bar.
+     ADDITIVE, not max(). The inset and the page's own margin are not alternatives -- one clears
+     the hardware, the other is the design's breathing room, and the header wants both. max() of
+     the two sources rather than of the margin: whichever source actually knows the inset wins,
+     and they never double count because only one is ever non-zero. */
+  padding-top:calc(max(env(safe-area-inset-top), var(--sa-top, 0px)) + 1.25rem);
   padding-right:max(1rem, env(safe-area-inset-right));
   padding-left:max(1rem, env(safe-area-inset-left));
   padding-bottom:calc(var(--nav-h) + var(--nav-inset) + 1.5rem);
@@ -196,41 +202,6 @@ body{
   max-width:34rem; margin-inline:auto;
 }
 
-/* !! THE INSTALLED APP OWNS THE WHOLE SCREEN, AND ONLY THE INSTALLED APP MAY HAVE THIS.
-   Additive rather than a replacement: where env() DOES report an inset the page still gets its own
-   1.25rem of margin below the status bar, which a bare `max(4.75rem, env(...))` would swallow at
-   exactly the sizes that matter. The 4.75rem floor is what carries the case where env() reports
-   nothing -- 76px, clearing the tallest status bar iOS currently draws (59pt) with room to spare,
-   and within 3px of what the additive term gives on that same device. Those two numbers being
-   close is deliberate: the screen looks the same whichever of the two causes is the real one.
-
-   !! THE ATTRIBUTE IS SET FROM THE ROUTE AS WELL AS THE DISPLAY MODE, and the route half is the
-   load-bearing one. Whether Telegram's iOS webview matches `display-mode: standalone` is unknown
-   and neither session could measure it; scoping to /web/ means it never has to be known. This is
-   also the house idiom rather than a workaround -- deriving per-request behaviour on the client is
-   what keeps / and /web/ byte-identical, which is the whole deploy proof. */
-:root[data-installed] body{padding-top:max(4.75rem, calc(env(safe-area-inset-top) + 1.25rem))}
-
-/* !! TEMPORARY DIAGNOSTIC. DELETE THIS RULE, ITS CLASSES AND THE BLOCK THAT BUILDS IT.
-   A ruler pinned to the TOP OF THE VIEWPORT -- not to the page's padded content -- so one
-   screenshot from the installed app says how far iOS's own top blur reaches down into the page.
-   Measured from Calvin's screenshot: iOS already holds this page 47px below the status bar and
-   reports env(safe-area-inset-top) as 0, so the status bar is NOT overlapping the page. What ate
-   the header was the blur, and its depth is the one number no browser here can produce.
-   Fine 2px stripes on the left because blur destroys a fine pattern visibly; labels on the right
-   say the offset in CSS pixels. The change that reads this screenshot removes all of it. */
-.ruler{position:fixed; top:0; left:0; right:0; height:10rem; z-index:99; pointer-events:none}
-.ruler .st{position:absolute; top:0; bottom:0; left:0; width:50%;
-  background:repeating-linear-gradient(to bottom, black 0 2px, white 2px 4px)}
-.ruler b{position:absolute; right:0; width:50%; height:1rem; text-align:center;
-  font:700 .6875rem/1rem var(--sans); color:white; background:firebrick}
-.readout{position:fixed; top:10rem; left:0; right:0; z-index:99; pointer-events:none;
-  background:gold; color:black; font:700 .75rem/1.25rem ui-monospace,Menlo,monospace;
-  padding:.25rem .375rem; white-space:pre-wrap; word-break:break-all}
-.satprobe{position:absolute; visibility:hidden; padding-top:env(safe-area-inset-top);
-  padding-bottom:env(safe-area-inset-bottom)}
-.r0{top:0}.r16{top:1rem}.r32{top:2rem}.r48{top:3rem}.r64{top:4rem}
-.r80{top:5rem}.r96{top:6rem}.r112{top:7rem}.r128{top:8rem}.r144{top:9rem}
 
 /* THE ONLY TWO PLACES A TRACKED-OUT CAPITAL RUN SURVIVES. It was on eleven, across the week
    label, every card's kind, the clock's own label, both definition terms and the why block --
@@ -1964,49 +1935,27 @@ details[open] > summary .disc{transform:rotate(90deg)}
   // bytes, which makes the two documents incapable of drifting apart rather than merely unlikely to.
   var web = location.pathname.indexOf("/web/") === 0;
 
-  // !! THE INSTALLED APP'S TOP INSET, STAMPED HERE BECAUSE NOTHING ELSE CAN SEE BOTH HALVES.
-  // Set before the early return below and before renderSkeleton, so the body is still empty when
-  // the padding changes and there is no visible reflow. BOTH conditions are required: the media
-  // query is the honest signal, and `web` is what makes a Telegram regression structurally
-  // impossible rather than merely unlikely -- see the rule this stamps, in the stylesheet.
-  try {
-    if (web && window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) {
-      docEl.setAttribute("data-installed", "");
-    }
-  } catch (e) { /* no matchMedia is no installed app; the page keeps its own top margin */ }
-
-  // !! TEMPORARY DIAGNOSTIC. DELETE WITH THE RULE IT DRAWS.
-  // /web/ only, so the Telegram screen is untouched while this is live.
-  if (web) {
-    var ruler = el("div", "ruler");
-    add(ruler, el("span", "st"));
-    for (var ri = 0; ri < 10; ri++) add(ruler, el("b", "r" + (ri * 16), String(ri * 16)));
-    document.body.appendChild(ruler);
-
-    // The numbers themselves. env() cannot be read from script directly, so a hidden element
-    // wears it as padding and the computed value is read back off that.
-    var probe = el("div", "satprobe");
-    document.body.appendChild(probe);
-    var out = el("div", "readout", "measuring");
-    document.body.appendChild(out);
-    var sample = function (label) {
-      var cs = getComputedStyle(probe);
-      var hdr = document.querySelector("header");
-      var r = hdr ? Math.round(hdr.getBoundingClientRect().top) : -1;
-      return label
-        + " sat=" + cs.paddingTop + " sab=" + cs.paddingBottom
-        + " scrollY=" + Math.round(window.pageYOffset || 0)
-        + " hdrTop=" + r
-        + " bodyPadTop=" + getComputedStyle(document.body).paddingTop
-        + " innerH=" + window.innerHeight + " screenH=" + screen.height
-        + " dm=" + ((window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) ? "standalone" : "browser");
-    };
-    var write = function () {
-      out.textContent = sample("A") + "\n" + (out.getAttribute("data-b") || "");
-    };
-    write();
-    setTimeout(function () { out.setAttribute("data-b", sample("B")); write(); }, 1500);
+  // !! THE TOP INSET THE STYLESHEET CANNOT SEE. Measured, not reasoned -- see the comment on the
+  // body's padding-top. env(safe-area-inset-top) is 0 in this app in both states, so the page has
+  // to work out for itself whether the status bar is currently over it. It is exactly when the
+  // viewport is the FULL screen height; once iOS settles the webview below the bar, innerHeight
+  // drops by the bar's height and that difference is the inset, which is why it is learned here
+  // rather than written as a constant. The 59 is only ever used for the first moments of the very
+  // first launch, before a settled measurement exists.
+  //
+  // !! window.screen, NOT screen. `screen` is this file's own variable for which of the two
+  // screens is showing, and it shadows the global -- the diagnostic that found all this reported
+  // `screenH=undefined` for exactly that reason.
+  var learnedTopInset = 0;
+  function syncTopInset() {
+    var sh = (window.screen && window.screen.height) || 0;
+    var gap = sh - window.innerHeight;
+    if (gap > 0) learnedTopInset = gap;
+    docEl.style.setProperty("--sa-top", (gap > 0 ? 0 : (learnedTopInset || 59)) + "px");
   }
+  syncTopInset();
+  // The settle is a resize, and it is the event this exists to catch. Rotation is the other one.
+  window.addEventListener("resize", syncTopInset);
 
   // SKIPPED ON /web/, NOT REPLACED WITH A SECOND EARLY RETURN. There is no launch to have there --
   // the reader is proven by a first-party cookie instead. Returning here would leave them on a
