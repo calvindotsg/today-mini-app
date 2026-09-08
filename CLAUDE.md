@@ -10,7 +10,7 @@ cost a session.
 
 | Task | Command |
 |---|---|
-| Test | `npm test` (180 tests) — **serialised**, see below |
+| Test | `npm test` (182 tests) — **serialised**, see below |
 | Auth suite only | `npm run test:auth` (Telegram) · `npm run test:web` (browser/PWA) |
 | Dev server | `npm run dev` |
 | Deploy | `npm run deploy` — CI also does this on merge to `main`, **behind an approval** (trap 2) |
@@ -260,6 +260,21 @@ inside `bed`** (the allowlist has to reach one level down, because `pick` does n
 ⚠️ **A control that cannot fail is worse than none.** *"Every status prints its own word"* was
 dropped as a view test — nothing here renders the DOM, so it would have passed with the week screen
 printing no status word at all. The mapping lives in `view.js` for exactly that reason.
+
+📌 **A second one was retired the same way, and the mutation check is what found it.**
+`docs.test.mjs` first carried a separate *"each document states the size exactly once"* test
+alongside its main assertion. No mutation could fail it **alone** — a README reading 181 while the
+suite has 182 satisfies it perfectly — so it added no detection power and one to the count it was
+policing. Its job now lives in the shape of the main assertion: `deepEqual` against a one-element
+array, which fails on no match, the wrong number, **and** a second mention.
+
+🔴 **`test/docs.test.mjs` reconciles the test count with the three documents that print it.**
+`README.md`, `CONTRIBUTING.md` and this file each state it, and before #37 nothing compared them to
+anything: they drifted to 125/178/179 at once, then agreed at 179 while the suite ran 180. **Add a
+test and all three go red until you update them** — that is the intended cost, and it is cheaper
+than the drift. ⚠️ The count is **static** (`test(` declarations), because a test cannot run its own
+suite; that only equals what `node --test` prints while every test is a flat top-level call, so a
+third test asserts exactly that and fails the moment anyone reaches for `describe()`.
 
 ⚠️ **`npm test` overwrites `dist/payload.json`**, because `publish.test.mjs` runs the real
 publisher. Re-run `scripts/publish.mjs` before seeding a local KV from that file, or you will seed
