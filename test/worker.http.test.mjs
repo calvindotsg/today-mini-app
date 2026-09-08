@@ -372,25 +372,39 @@ test("the bar keeps its scroll edge effect, which is not decoration", async () =
     /#[0-9a-fA-F]{6}|rgba?\(/, "the effect must be built from --background, never a literal scrim");
 });
 
-test("the installed app clears the status bar, and nothing else is given that floor", async () => {
+test("the header clears the status bar in BOTH of the launch states, not just the settled one", async () => {
   const res = await fetch(`${BASE}/`);
   const body = await res.text();
-  // Reported from the phone: in the home-screen app the header rendered UNDER the Dynamic Island
-  // at scroll zero, faded out by iOS's own blur. The page's own 1.25rem top margin is all that
-  // applied, so whatever env(safe-area-inset-top) reports there, it does not clear the bar.
-  assert.match(body, /:root\[data-installed\] body\{padding-top:max\(4\.75rem, calc\(env\(safe-area-inset-top\) \+ 1\.25rem\)\)\}/,
-    "the installed app gets a floor that clears the status bar, additive so a real inset still keeps the page's margin");
-  // THE `web &&` IS THE LOAD-BEARING HALF. Whether Telegram's iOS webview matches
-  // `display-mode: standalone` is unmeasured by either session; scoping to the route is what makes
-  // a Telegram regression impossible rather than unlikely. Pin the whole condition, not the
-  // setAttribute -- a stamp that fires everywhere passes any test that only looks for the stamp.
-  assert.match(body, /if \(web && window\.matchMedia && window\.matchMedia\("\(display-mode: standalone\)"\)\.matches\) \{\s*docEl\.setAttribute\("data-installed", ""\);/,
-    "the floor is stamped only on the /web/ route AND only when running as an installed app");
-  // The other direction of the same rule: the UNSCOPED floor must stay the page's own margin.
-  // Raising it here instead would fix the installed app and give Telegram -- which is correct
-  // today -- sixty pixels of dead space at the top of every screen.
-  assert.match(body, /padding-top:max\(1\.25rem, env\(safe-area-inset-top\)\);/,
-    "the shared floor stays the page's own margin");
+  // Measured on the phone: env(safe-area-inset-top) reports 0 in this app in both states, while
+  // env(safe-area-inset-bottom) reports 34 once settled. So --sa-top is not belt-and-braces, it is
+  // the only source that knows about the top edge, and env() is kept because it is the correct one
+  // wherever it does work. max() of the two SOURCES, then add the page's own margin -- additive,
+  // because clearing the hardware and having a margin are different jobs.
+  assert.match(body, /padding-top:calc\(max\(env\(safe-area-inset-top\), var\(--sa-top, 0px\)\) \+ 1\.25rem\);/,
+    "the top padding takes the inset from whichever source knows it, and adds the page's margin");
+  // THE CONDITION, NOT THE CALL. A syncTopInset that always wrote 0 would leave every assertion
+  // about its existence green while the header spent every launch under the status bar.
+  assert.match(body, /var gap = sh - window\.innerHeight;\s*if \(gap > 0\) learnedTopInset = gap;/,
+    "the inset is learned from the settled viewport rather than written as a constant");
+  assert.match(body, /docEl\.style\.setProperty\("--sa-top", \(gap > 0 \? 0 : \(learnedTopInset \|\| 59\)\) \+ "px"\);/,
+    "the inset applies only while the viewport is the full screen, which is when the bar overlaps");
+  // `screen` is this file's own variable for which screen is showing and shadows the global; the
+  // diagnostic that found all of this reported screenH=undefined for precisely that reason.
+  assert.match(body, /var sh = \(window\.screen && window\.screen\.height\) \|\| 0;/,
+    "the global is reached through window, because `screen` is taken in this scope");
+  // The settle IS a resize, and it is the whole reason this listener exists.
+  assert.match(body, /window\.addEventListener\("resize", syncTopInset\);/,
+    "the settle arrives as a resize and has to be caught");
+});
+
+test("no diagnostic survives into the served document", async () => {
+  const res = await fetch(`${BASE}/`);
+  const body = await res.text();
+  // Two temporary instruments were shipped to production to measure the inset -- a striped ruler
+  // and a numeric readout -- because no browser available here could produce those numbers. Both
+  // were meant to be deleted by the change that read them. This is the check that they were.
+  assert.doesNotMatch(body, /\.ruler\{|\.readout\{|satprobe|data-installed/,
+    "a measuring instrument was left in the page that a reader will see");
 });
 
 test("GET /s is refused -- the app is not reachable without a POSTed launch", async () => {
