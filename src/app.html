@@ -387,6 +387,16 @@ footer.credit{margin-top:1.75rem; color:var(--quieter); font-size:.6875rem}
   pointer-events:none; z-index:10;
   padding:0 1rem;
 }
+/* THIS RULE IS THE ONLY THING THAT MAKES `hidden` WORK ON THIS ELEMENT, and without it the
+   attribute is set and does nothing. `hidden` is implemented as a UA-stylesheet `[hidden]{display:
+   none}` at the lowest specificity there is, and the rule above sets `display:flex` on a CLASS --
+   (0,1,0) beats it. So `navEl.hidden = true` stamped the attribute, the flex container kept its
+   box, and the refusal screen drew an EMPTY 9-pixel glass sliver with no tabs in it.
+   Measured on the live site by a parallel session -- height 9, width 581, zero buttons -- on both
+   the Telegram refusal and the signed-out /web/ screen. Shipped in #27 and invisible to 178 tests,
+   because nothing in this suite renders the DOM: `hidden` was set correctly and asserted nowhere.
+   Do not "simplify" this away as redundant with the attribute. It IS the attribute. */
+.navbar[hidden]{display:none}
 /* ── the material: STOCK APPLE, NOT THIS SITE'S SYSTEM ─────────────────────────────────────
    The bar below is the one thing on this page drawn in the platform's own language rather than
    calvin.sg's, and that is a decision rather than a drift. Everything else here is flat, has a
@@ -501,12 +511,31 @@ footer.credit{margin-top:1.75rem; color:var(--quieter); font-size:.6875rem}
    with no ground floating over scrolling text is unreadable rather than merely plain. The solid
    fallback is the one place the bar borrows from this page's palette, because an opaque surface
    under this page's own text has to agree with this page's own ground.
-   Only two of these three actually fire on the platform this page is for: iOS has no
-   `prefers-reduced-transparency` as of Safari 26.6, so a reader who set Reduce Transparency
-   still gets the blur. The query ships because it costs nothing and becomes correct the day
-   WebKit implements it -- it is not a guard that is working today. */
+   Apple names THREE settings that change a Liquid Glass surface: reduce transparency, increase
+   contrast, and the reader's own preferred look for the material. All four blocks below are here
+   because of that list, and they do not all fire on the platform this page is for:
+
+     @supports not (backdrop-filter)  -- fires: an old WebKit with no blur at all
+     prefers-contrast: more           -- FIRES on iOS. Increase Contrast maps to it
+     prefers-reduced-transparency     -- does NOT fire: unimplemented in WebKit as of Safari 26.6
+     forced-colors: active            -- fires
+
+   The reduced-transparency query ships anyway because it costs nothing and becomes correct the
+   day WebKit implements it. `prefers-contrast` is the one that was MISSING, and it is the one of
+   the three that a reader on this platform can actually turn on today -- so the bar was ignoring
+   the only one of Apple's three accessibility settings that reaches it. It gets a firmer edge as
+   well as a solid ground, because Increase Contrast is a request for definition and not merely
+   for opacity: --hairline is 32% of the ink and --text is the ink itself. */
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))){
   .navbar .pill{background:var(--card-background); border-color:var(--card-border)}
+}
+@media (prefers-contrast: more){
+  .navbar .pill{
+    background:var(--card-background); border-color:var(--text);
+    -webkit-backdrop-filter:none; backdrop-filter:none;
+  }
+  .navbar .chip{color:var(--text)}
+  .navbar .chip[aria-current=page]{background:var(--text); color:var(--background)}
 }
 @media (prefers-reduced-transparency: reduce){
   .navbar .pill{background:var(--card-background); border-color:var(--card-border)}
@@ -1298,7 +1327,20 @@ details[open] > summary .disc{transform:rotate(90deg)}
   // an error screen has one screen, and offering a tab to a second one that does not exist is a
   // control that lies. That is the same condition the old in-page chip carried.
   function renderNav() {
-    if (!hasWeek()) { navEl.hidden = true; pillEl.textContent = ""; return; }
+    // WHAT DECIDES THIS IS `ok`, NOT WHETHER THE WEEK HAS ANY DAYS IN IT, and the distinction is
+    // the whole of Apple's rule here: "Don't disable or hide tab bar buttons, even when their
+    // content is unavailable... If a section is empty, explain why its content is unavailable."
+    //
+    // A PUBLISHED PLAN WITH NO DAYS IS AN EMPTY SECTION, not an absent one. The Week screen exists,
+    // it has something true to say -- nothing has been published -- and hiding the way to it means
+    // the reader cannot go and read that for themselves. `renderWeek` prints the explanation the
+    // guidance asks for.
+    //
+    // A REFUSAL IS NOT AN EMPTY SECTION. On the error path there is no plan, no week and no
+    // account: there are no sections at all, so a tab leading to one would be a control that lies
+    // about having something behind it -- which is this page's own rule, written on the past-day
+    // disclosure. The two look like one case and are not, and this is the line between them.
+    if (!view || !view.ok) { navEl.hidden = true; pillEl.textContent = ""; return; }
     pillEl.textContent = "";
     add(pillEl, navChip("Today", function () { show("today"); }, screen === "today", "today"));
     add(pillEl, navChip("Week", function () { show("week"); }, screen === "week", "week"));
@@ -1669,6 +1711,14 @@ details[open] > summary .disc{transform:rotate(90deg)}
     }
 
     add(root, renderGauge(w.volume || {}));
+    // THE EXPLANATION THE TAB NOW OWES THE READER. The navigation stays drawn when a published
+    // plan has no days in it, so this screen has to say why it is empty rather than simply being
+    // empty -- an unexplained blank is indistinguishable from a page that failed to load, which is
+    // the same reason the skeleton exists.
+    if (!hasWeek()) {
+      add(root, el("p", "race", "This plan contains no days, so there is nothing to show for any day of the week."));
+      return;
+    }
     for (var i = 0; i < w.days.length; i++) add(root, renderDay(w.days[i]));
   }
 
