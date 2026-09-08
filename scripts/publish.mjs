@@ -365,6 +365,7 @@ const SESSION_WORDS = { warn: 160, refuse: 200 };
 
 const overLimit = [];
 const overWords = [];
+let noFloor = null;   // a give-way section that names no protected floor
 
 console.log("");
 console.log(`lengths   ${strict ? "STRICT — over the refuse column is a refusal" : "warnings only — pass --strict to refuse"}`);
@@ -407,12 +408,37 @@ if (inputIsArtifact) {
   const parts = body.split(/<h2[^>]*>/i);
   for (const part of parts.slice(1)) {
     const heading = words(text(part.split(/<\/h2>/i)[0])) ? text(part.split(/<\/h2>/i)[0]).trim().replace(/\s+/g, " ") : "(untitled)";
-    sections.push({ heading: heading.slice(0, 38), n: words(text(part)) });
+    sections.push({ heading: heading.slice(0, 38), n: words(text(part)), body: text(part) });
   }
   sections.sort((a, b) => b.n - a.n);
   console.log(`          rendered words on the page  ${totalWords}`);
   for (const s of sections.slice(0, 4)) {
     console.log(`          section ${String(s.n).padStart(4)}  ${s.heading}`);
+  }
+  // ── THE GIVE-WAY SECTION MUST STATE A FLOOR ────────────────────────────────────────────────
+  //
+  // 🔴 A LADDER WITH NO FLOOR TELLS THE BOX WHAT TO SACRIFICE AND NEVER SAYS WHERE TO STOP.
+  //
+  // artifact-shape.md marks "If something has to give" as one of two sections kept "all of it,
+  // untouched", because the Hermes box carries the week mid-flight and cannot ask a question.
+  // On 2026-09-08 a redraw cut three of its four rungs AND the whole "Never these" floor, and a
+  // repo-wide grep found those lines in no .md file at all -- they left the store in one edit.
+  //
+  // An item COUNT would not have caught it: the section still had six list items, because page
+  // content had moved in to replace the rungs. What was missing was the floor, so that is what
+  // this checks -- one word, in one named section, and it is the word the athlete needs when a
+  // session is going badly and the answer is "not this one".
+  const giveWay = sections.find((s) => /\bgives? way\b|has to give|what to drop/i.test(s.heading));
+  if (!giveWay) {
+    console.log("");
+    console.log("warning   no give-way section found by heading. If this week's page names it");
+    console.log("          differently, that is fine -- but check the floor is stated somewhere.");
+    // ⚠️ "do not cut X" IS NOT A FLOOR AND WAS IN THE FIRST DRAFT OF THIS REGEX. It matched
+    // "Do not cut Thursday morning", which is a RUNG -- a thing that may still go, just later.
+    // The check then passed the very artifact it was written to refuse. A floor names what is
+    // never given up at all, so the vocabulary is the floor's, not the ladder's.
+  } else if (!/\bnever\b|\bnot these\b|\bprotected\b|\bnon-negotiable\b/i.test(giveWay.body)) {
+    noFloor = giveWay.heading;
   }
 } else {
   console.log("          prose counters SKIPPED — this input is JSON, not an artifact");
@@ -492,10 +518,10 @@ if (spentFields > 0) {
 // ⚠️ ONE BLOCK REPORTS BOTH THE CEILING AND THE FLOOR, deliberately. Refusing on length first
 // would send a session away to shorten a page, and only on the next run tell it that a field is
 // missing -- two round trips to learn two things that were both true on the first.
-if (overLimit.length || overWords.length || missingCoverage.length) {
+if (overLimit.length || overWords.length || missingCoverage.length || noFloor) {
   const bad = overLimit.filter((v) => v.n > v.lim.refuse);
   const badW = overWords.filter((v) => v.n > SESSION_WORDS.refuse);
-  const fails = bad.length || badW.length || missingCoverage.length;
+  const fails = bad.length || badW.length || missingCoverage.length || noFloor;
   const out = strict && fails ? console.error : console.log;
   const verb = strict && fails ? "REFUSED:" : "warning  ";
   out("");
@@ -518,6 +544,11 @@ if (overLimit.length || overWords.length || missingCoverage.length) {
     out("  `place` is where to go and `oneRule` is the decision taken before the session starts;");
     out("  both are read at 06:15 with no chance to ask. A shorter page that drops them is not a");
     out("  better page. If a session genuinely is not training, its kind belongs in NOT_TRAINING.");
+  }
+  if (noFloor) {
+    out(`${verb} "${noFloor}" lists what gives way and never says what does not.`);
+    out("  Name the sessions that are protected -- \"Never these\" -- and why. A box triaging a bad");
+    out("  day reads this list and has no way to know where to stop cutting. See artifact-shape.md.");
   }
   if (strict && fails) process.exit(1);
   if (!strict && fails) {
