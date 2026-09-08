@@ -163,7 +163,7 @@ own `initData` against it, so every auth path is exercised without a real creden
 
 | Command | What it does |
 | --- | --- |
-| `npm test` | The whole suite, 190 tests |
+| `npm test` | The whole suite, 195 tests |
 | `npm run test:auth` | Just the Telegram HTTP auth suite, against the real Worker in the real runtime |
 | `npm run test:web` | The same, for the browser and home-screen way in |
 | `npm run dev` | `wrangler dev` on an emulated KV |
@@ -195,8 +195,27 @@ the app public on the day someone forgets a `wrangler secret put`.
 ## Publishing a week
 
 ```sh
-node scripts/publish.mjs ~/path/to/week.html --put
+node scripts/publish.mjs ~/path/to/week.html --strict   # a person is running this
+node scripts/publish.mjs ~/path/to/week.html            # the nightly routine runs this
 ```
+
+🔴 **`--strict` is the difference between a person and a cron, and it exists because of what
+happens at 23:40.** The publisher measures how long every published field is, because the weekly
+artifact grew too wordy to read on a phone and nothing here could say so — one `travel` reached
+**428 characters**, and a single session reached **264 words**, entirely through mid-week edits
+that rewrote each field to include the derivation of its own change.
+
+Over the limit, the publisher **refuses with `--strict` and warns without it**. The
+`training-week-publish` routine is pure transport: it cannot rewrite the artifact and it cannot
+ask, so a length refusal there is an outage with no recovery — and there is precedent, a freshness
+stop once left a week with no `announce/` envelope for its whole first day. **A stale phone is a
+worse failure than a wordy one.** The markup, store-reference and acronym gates refuse on both
+paths, because those are correctness rather than style.
+
+⚠️ **A refusal now clears `dist/` first.** Every refusal exits before the payload is written, so a
+refused run used to leave the *previous* run's payload in place — and the next step in the ship
+procedure is `cp dist/payload.json published/<new stem>`. That copied last week under a fresh stem
+while the operator read a refusal. It is a missing file now, which fails loudly.
 
 **A cron cannot do this.** The week lives in a private Claude artifact readable only by a Claude
 session — the box has no route to `claude.ai`, and a script on my Mac has no credential for it. So
