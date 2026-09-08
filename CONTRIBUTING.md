@@ -38,12 +38,18 @@ exists.
 
 | Command | What it does |
 | --- | --- |
-| `npm test` | The whole suite, 180 tests. **Serialised** — two suites each spawn a real `wrangler dev`, and racing them makes startup exceed its 90-second wait |
+| `npm test` | The whole suite, 182 tests. **Serialised** — two suites each spawn a real `wrangler dev`, and racing them makes startup exceed its 90-second wait |
 | `npm run test:auth` | Just the Telegram HTTP auth suite, against the real Worker in the real runtime |
 | `npm run test:web` | The same, for the browser and home-screen way in |
 | `npm run dev` | `wrangler dev` on the emulated KV |
 | `npm run deploy` | Ships to `today.calvin.sg`. CI does this on merge — see below |
 | `npm run publish:week` | Reduces a weekly artifact and writes it to KV |
+
+🔴 **That number is enforced, so adding a test turns this table red.** `test/docs.test.mjs` counts
+the suite and compares it against the figure in this file, `README.md` and `CLAUDE.md` — all three
+state it, and none of them used to be checked against anything. Update all three; the failure
+message names the file and both numbers. If you reword the line, fix the pattern in that test
+rather than deleting the check.
 
 ## Commit conventions
 
