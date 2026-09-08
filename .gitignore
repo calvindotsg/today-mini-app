@@ -48,3 +48,7 @@ CLAUDE.local.md
 .vscode/
 *~
 *.swp
+
+# The cf CLI writes an account-id cache here on any read. Not a credential, but not ours to
+# ship either, and this repository is public.
+.cloudflare/

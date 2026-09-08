@@ -312,6 +312,40 @@ test("the week screen always draws its own way back, and a spent day opens", asy
   assert.match(body, /details\[open\] > summary \.disc\{transform:rotate\(90deg\)\}/);
 });
 
+// THE REGRESSION CONTROL FOR A COSMETIC BUG THAT SHIPPED, and it is a source-text assertion for
+// the same reason the two above are: nothing in this suite renders the DOM, so the only thing it
+// can see is the stylesheet it served.
+//
+// `renderNav` sets `navEl.hidden = true` on every screen with nowhere to navigate. That was
+// correct and did nothing: `hidden` is a UA-stylesheet rule at the lowest specificity there is,
+// and `.navbar` sets `display:flex` on a CLASS, which beats it. So the refusal screen drew an
+// empty 9-pixel glass sliver with no tabs in it -- shipped in #27, live on two routes, and
+// invisible to 178 passing tests because the attribute WAS being set.
+//
+// The rule below is the whole fix, and it looks redundant with the attribute, which is exactly why
+// it needs a test standing on it. Deleting it does not break the markup; it restores the bug.
+test("the navigation can actually be hidden, not merely marked hidden", async () => {
+  const res = await fetch(`${BASE}/`);
+  const body = await res.text();
+  assert.match(body, /\.navbar\[hidden\]\{display:none\}/,
+    "a class-level display beats the hidden attribute, so the attribute needs a rule of its own");
+
+  // THE CONDITION, NOT JUST THE ASSIGNMENT -- and the difference was measured rather than assumed.
+  // An earlier version of this test asserted only that `navEl.hidden = true` appeared somewhere,
+  // and mutating the guard to `if (false)` -- so the bar is NEVER hidden -- left the whole suite
+  // green, because the dead assignment was still in the source. Pinning the condition is what
+  // makes the rule below testable at all.
+  //
+  // It is also the line between two rules that disagree. Apple: "Don't disable or hide tab bar
+  // buttons, even when their content is unavailable... If a section is empty, explain why." This
+  // page: a control that opens onto emptiness lies about having something behind it. A published
+  // plan with no days is an EMPTY section and keeps its tabs; a refusal has no sections at all and
+  // gets no bar. `ok` is what separates them, and a future change that reaches for `hasWeek()`
+  // here instead would silently take Apple's case away.
+  assert.match(body, /if \(!view \|\| !view\.ok\) \{ navEl\.hidden = true;/,
+    "only a refusal hides the bar -- an empty week keeps it, and explains itself");
+});
+
 test("GET /s is refused -- the app is not reachable without a POSTed launch", async () => {
   await assertDenied(await fetch(`${BASE}/s`), "GET /s");
 });
