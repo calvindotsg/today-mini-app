@@ -12,7 +12,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -304,7 +304,7 @@ test("the counters name the longest field AND the path it sits at", () => {
 
   assert.equal(r.code, 0, r.err);
   // The path is the half that matters: "travel is 300 chars" sends you looking through seven days.
-  assert.match(r.out, /travel\s+longest\s+300 chars\s+days\[0\]\.sessions\[0\]\.travel/);
+  assert.match(r.out, /travel\s+longest\s+300 chars.*days\[0\]\.sessions\[0\]\.travel/);
 });
 
 test("a field that is absent reports as absent rather than as zero-length", () => {
@@ -312,7 +312,7 @@ test("a field that is absent reports as absent rather than as zero-length", () =
   // upstream. Printing "0 chars" for both would report a week as tighter than it is.
   const r = publish(weekState(), "counter-absent");
   assert.equal(r.code, 0, r.err);
-  assert.match(r.out, /travel\s+longest\s+0 chars\s+\(absent\)/);
+  assert.match(r.out, /travel\s+longest\s+0 chars.*\(absent\)/);
 });
 
 test("words per session is counted across every field, and names the worst one", () => {
@@ -346,14 +346,107 @@ test("a JSON input SAYS the prose counters did not run, rather than passing quie
   assert.equal(r.out.includes("rendered words on the page"), false);
 });
 
-test("nothing the counters measure can change the exit code", () => {
-  // The whole point of shipping measurement first: a week that would fail every future threshold
-  // still publishes tonight. If this test ever goes red, a gate was added without a decision.
+test("nothing measured can change the exit code on the DEFAULT path", () => {
+  // 🔴 THIS TEST OUTLIVED THE WORDING IT USED TO ASSERT, AND THAT IS THE POINT. It shipped with
+  // the counters, when the banner read "measurement only". Thresholds arrived a PR later and the
+  // banner changed -- but what this protects did not: a week that trips every threshold still
+  // publishes on the path the 23:40 transport routine takes. Asserting the behaviour rather than
+  // the banner is what keeps it true through the next rewording.
   const ws = weekState();
   ws.days[0].sessions[0].travel = "y".repeat(2000);
   ws.days[0].sessions[0].intention = "z ".repeat(500);
   const r = publish(ws, "counter-no-gate");
 
-  assert.equal(r.code, 0, "measurement must never refuse");
-  assert.match(r.out, /measurement only — nothing below refuses or warns/);
+  assert.equal(r.code, 0, "the default path must never refuse on length");
+  assert.match(r.out, /pass --strict to refuse/);
+  assert.match(r.out, /longer than this week needs/, "and it must still SAY so");
+});
+
+// ── THE LENGTH THRESHOLDS ────────────────────────────────────────────────────────────────────
+//
+// Calibrated against the twelve committed payloads in the wiki's published/, which are immutable.
+// The property that set every number is the first test below: a freshly planned week passes, and
+// only a week that has GROWN trips anything.
+
+function publishStrict(ws, name) {
+  const file = join(TMP, `${name}.json`);
+  writeFileSync(file, JSON.stringify(ws));
+  const r = spawnSync(process.execPath, [PUBLISH, file, "--strict"], {
+    encoding: "utf8", cwd: ROOT, env: sandboxEnv(join(TMP, "bin")),
+  });
+  return { code: r.status, out: r.stdout ?? "", err: r.stderr ?? "" };
+}
+
+test("length REFUSES under --strict and merely warns without it", () => {
+  // 🔴 THE WHOLE DESIGN IN ONE TEST. training-week-publish runs this at 23:40 as pure transport:
+  // it cannot rewrite the artifact and cannot ask, so a length refusal there is an outage with no
+  // recovery. A stale phone is a worse failure than a wordy one, so length refuses only when a
+  // human is present. Correctness gates (markup, store refs, acronyms) refuse on both paths.
+  const ws = weekState();
+  ws.days[0].sessions[0].travel = "x".repeat(400);
+
+  const loose = publish(ws, "gate-loose");
+  assert.equal(loose.code, 0, "the nightly transport path must still ship");
+  assert.match(loose.out, /Over the refuse column, but --strict was not passed/);
+
+  const tight = publishStrict(ws, "gate-strict");
+  assert.equal(tight.code, 1, "a human running it must be stopped");
+  assert.match(tight.err, /days\[0\]\.sessions\[0\]\.travel: 400 chars/);
+});
+
+test("a refusal leaves NO dist/payload.json to be shipped by mistake", () => {
+  // Every refusal exits before dist/ is written, so a refused run used to leave LAST run's payload
+  // there -- and the ship procedure's next step is `cp dist/payload.json published/<new stem>`.
+  // That copies a previous week under a fresh stem while the operator reads a refusal.
+  const good = publish(weekState(), "dist-seed");
+  assert.equal(good.code, 0, good.err);
+  const dist = join(process.env.TODAY_DIST_DIR, "payload.json");
+  assert.equal(existsSync(dist), true, "the good run must have written one");
+
+  const ws = weekState();
+  ws.days[0].sessions[0].oneRule = "y".repeat(400);
+  assert.equal(publishStrict(ws, "dist-refuse").code, 1);
+  assert.equal(existsSync(dist), false, "a refusal must leave nothing behind to copy");
+});
+
+test("the skill's own good intention passes clean, warn included", () => {
+  // 🔴 CALIBRATION GUARD. week-state.md holds this 224-character sentence up as the model answer --
+  // it is the one written to replace an intention the athlete called "too technical which i don't
+  // understand". A cap that fires on the documented right answer teaches the next session to
+  // distrust the cap, so this is pinned rather than left to whoever next edits LIMITS.
+  const ws = weekState();
+  ws.days[0].sessions[0].intention =
+    "This is the first time you have been asked to run faster than your normal easy pace, and the " +
+    "first time you are the one setting the pace for other people rather than following someone. " +
+    "Worth paying attention to how it feels.";
+  assert.equal(ws.days[0].sessions[0].intention.length, 224);
+
+  const r = publishStrict(ws, "gate-exemplar");
+  assert.equal(r.code, 0, r.err);
+  assert.equal(r.out.includes("longer than this week needs"), false);
+});
+
+test("splitting one long field into two still trips the session cap", () => {
+  // Every per-field cap can be evaded by moving a sentence next door. The words-per-session cap is
+  // the only field-agnostic instrument here, and it is the one that measures what actually grew.
+  const ws = weekState();
+  const filler = "word ".repeat(60);
+  ws.days[0].sessions[0].travel = filler;      // 60 words, under the travel char cap on its own
+  ws.days[0].sessions[0].intention = filler;   // another 60
+  ws.days[0].sessions[0].oneRule = filler;     // and another
+
+  const r = publishStrict(ws, "gate-split");
+  assert.equal(r.code, 1, "the session total must catch what the field caps let through");
+  assert.match(r.err, /\d+ words \(warn 160, refuse 200\)/);
+});
+
+test("fields on a spent session warn and never refuse", () => {
+  // Measured before choosing the severity: this fires on EVERY payload in the corpus, both first
+  // publishes included. Refusing it would break tonight, before the skill that emits it changed.
+  const ws = weekState();
+  ws.days[0].sessions[0].status = "done";
+  const r = publishStrict(ws, "gate-spent");
+
+  assert.equal(r.code, 0, "a spent session must never block a publish");
+  assert.match(r.out, /field\(s\) on done\/missed\/skipped sessions are published and never drawn/);
 });

@@ -80,8 +80,19 @@ const args = process.argv.slice(2);
 const file = args.find((a) => !a.startsWith("--"));
 const put = args.includes("--put");
 const noNotify = args.includes("--no-notify");
+// 🔴 WHO PASSES --strict, AND WHY IT IS NOT THE DEFAULT.
+//
+// `training-week-publish` runs this file at 23:40 every night and is PURE TRANSPORT: it cannot
+// rewrite the artifact and it cannot ask. A length refusal there is an outage with no automated
+// recovery -- and the precedent is on the record, the 6 Sep freshness stop left a week with no
+// announce/ envelope for its whole first day. A stale phone is a worse failure than a wordy one.
+//
+// So length REFUSES only when a human is present to fix it, and always WARNS. The shape, markup,
+// store-reference and acronym gates below refuse on both paths regardless: those are correctness,
+// and this one is style.
+const strict = args.includes("--strict");
 if (!file) {
-  console.error("usage: publish.mjs <week.html|week-state.json> [--put] [--no-notify]");
+  console.error("usage: publish.mjs <week.html|week-state.json> [--put] [--no-notify] [--strict]");
   process.exit(2);
 }
 
@@ -197,6 +208,17 @@ function* strings(node, path = "") {
   }
 }
 
+// 🔴 CLEARED BEFORE ANYTHING CAN REFUSE, and this is not tidiness.
+//
+// Every refusal below exits before `writeFileSync(dist/payload.json)`, so a refused run leaves
+// LAST run's payload sitting there -- and the documented ship procedure's next step is
+// `cp dist/payload.json published/<new stem>`. That copies a previous week under a fresh stem
+// while the operator is reading a refusal. Removing them first turns that into a missing file,
+// which fails loudly, instead of a wrong file, which does not fail at all.
+for (const stale of ["payload.json", "envelope.json"]) {
+  rmSync(`${DIST_DIR}/${stale}`, { force: true });
+}
+
 const rawInput = readFileSync(file, "utf8");
 
 // 🔴 THE ONE-CHARACTER BYPASS, NAMED RATHER THAN LEFT TO BE DISCOVERED. `extractWeekState` accepts
@@ -279,12 +301,66 @@ sessionWords.sort((a, b) => b.n - a.n);
 let payloadWords = 0;
 for (const [, s] of strings(payload.days)) payloadWords += words(s);
 
+// ── THE THRESHOLDS ───────────────────────────────────────────────────────────────────────────
+//
+// CALIBRATED AGAINST THE TWELVE COMMITTED PAYLOADS IN published/, which are immutable, so this
+// reproduces. The result that set every number: BOTH weeks' FIRST publish trips nothing, and every
+// trip in the corpus was introduced by a mid-week reconcile. The gate cannot block a freshly
+// planned week -- only one that has grown -- which is the empirical answer to "a gate that fires
+// wrongly gets switched off" rather than an argument for it.
+//
+// ⚠️ TWO CALIBRATION RULES, BOTH LEARNED BY GETTING THEM WRONG FIRST.
+//
+// 1. NO THRESHOLD MAY FIRE ON THE SKILL'S OWN GOOD EXAMPLE. week-state.md holds a 224-character
+//    `intention` up as the model answer -- the sentence written to replace one the athlete called
+//    "too technical" -- so a 200 cap would have refused the documented right answer.
+// 2. NO WARNING MAY FIRE ON A CLEAN FIRST PUBLISH. `travel` warned at 140 and `words per session`
+//    at 120; measured, those fired on a 156-character travel that is entirely operational
+//    ("briefing is 19:15 ... be there by 19:00") and on six of thirteen sessions in a normal week.
+//    A warning on half the week every week is noise, and noise is how a gate gets switched off.
+//    Raised to 200 and 160, which are above both weeks' first publish and below what a reconcile
+//    grows them to.
+const LIMITS = {
+  oneRule:    { warn: 200, refuse: 320 },
+  intention:  { warn: 240, refuse: 320 },
+  travel:     { warn: 200, refuse: 240 },
+  "bed.text": { warn: 160, refuse: 260 },
+};
+const SESSION_WORDS = { warn: 160, refuse: 200 };
+
+// 🔴 TWO CANDIDATE CHECKS WERE MEASURED AND DROPPED. Recorded because the next session will think
+// of both again.
+//
+// A clock-negation regex -- /\d{1,2}:\d{2}[^.]{0,40}\bnot\b[^.]{0,15}\d{1,2}:\d{2}/ -- was meant to
+// catch "the time changed to 19:20 ... says 7.20pm". Run over the corpus it MISSED that string
+// entirely (7.20pm carries no colon) and its only match anywhere was `6:06/km, not 6:00`, which is
+// a correct pace instruction. Zero recall on its target, one false positive on a correct week.
+//
+// Strikethrough in prose is already covered where it counts: `s` and `del` are in MARKUP's tag
+// list, so a struck published field is refused today. Rendered prose is not published, and a check
+// that has never fired and cannot reach the screen is a subscription with no benefit.
+
+const overLimit = [];
+const overWords = [];
+
 console.log("");
-console.log("lengths   measurement only — nothing below refuses or warns");
+console.log(`lengths   ${strict ? "STRICT — over the refuse column is a refusal" : "warnings only — pass --strict to refuse"}`);
 for (const key of ["oneRule", "intention", "travel", "bed.text"]) {
   const hit = fieldMax.get(key);
-  console.log(`          ${key.padEnd(10)} longest ${String(hit ? hit.n : 0).padStart(4)} chars${hit ? `  ${hit.path}` : "  (absent)"}`);
+  const lim = LIMITS[key];
+  const flag = !hit ? "" : hit.n > lim.refuse ? "  OVER" : hit.n > lim.warn ? "  over warn" : "";
+  console.log(`          ${key.padEnd(10)} longest ${String(hit ? hit.n : 0).padStart(4)} chars  (warn ${lim.warn}, refuse ${lim.refuse})${hit ? `  ${hit.path}` : "  (absent)"}${flag}`);
 }
+// Reported on the LONGEST above, but collected across every field: a week with four 300-character
+// travels has one number in the summary and four things to fix.
+for (const [path, s] of strings(payload)) {
+  const leaf = path.split(".").pop().replace(/\[\d+\]$/, "");
+  const key = leaf === "text" ? "bed.text" : leaf;
+  const lim = LIMITS[key];
+  if (!lim || !WATCHED.includes(leaf)) continue;
+  if (s.length > lim.warn) overLimit.push({ path, key, n: s.length, lim });
+}
+for (const s of sessionWords) if (s.n > SESSION_WORDS.warn) overWords.push(s);
 const worst = sessionWords[0];
 console.log(`          words per session  max ${worst ? worst.n : 0}${worst ? `  ${worst.date} ${worst.title.slice(0, 44)}` : ""}`);
 console.log(`          words across all ${payload.days.length} days  ${payloadWords}`);
@@ -317,6 +393,45 @@ if (inputIsArtifact) {
   }
 } else {
   console.log("          prose counters SKIPPED — this input is JSON, not an artifact");
+}
+
+// ⚠️ SPENT SESSIONS SHIP FIELDS THE APP NEVER DRAWS, and this is a warning rather than a refusal
+// for one measured reason: it fires on EVERY payload in the corpus including both first publishes,
+// so refusing it would break tonight before the skill that writes it has been changed.
+const SUPPRESSED = ["oneRule", "intention", "travel", "leaveBy", "numbers", "bring", "until"];
+let spentFields = 0;
+for (const day of payload.days) {
+  for (const s of day.sessions) {
+    if (s.status === "planned") continue;
+    spentFields += SUPPRESSED.filter((k) => k in s).length;
+  }
+}
+if (spentFields > 0) {
+  console.log("");
+  console.log(`warning   ${spentFields} field(s) on done/missed/skipped sessions are published and never drawn.`);
+  console.log("          The app suppresses everything below the title on a spent session, so these are");
+  console.log("          bytes on a mobile connection that nobody can read. Not a refusal.");
+}
+
+if (overLimit.length || overWords.length) {
+  const bad = overLimit.filter((v) => v.n > v.lim.refuse);
+  const badW = overWords.filter((v) => v.n > SESSION_WORDS.refuse);
+  const out = strict && (bad.length || badW.length) ? console.error : console.log;
+  const verb = strict && (bad.length || badW.length) ? "REFUSED:" : "warning  ";
+  out("");
+  out(`${verb} ${overLimit.length} field(s) and ${overWords.length} session(s) are longer than this week needs.`);
+  for (const v of overLimit) {
+    out(`  ${v.path}: ${v.n} chars (warn ${v.lim.warn}, refuse ${v.lim.refuse})`);
+  }
+  for (const v of overWords) {
+    out(`  ${v.date} "${v.title.slice(0, 40)}": ${v.n} words (warn ${SESSION_WORDS.warn}, refuse ${SESSION_WORDS.refuse})`);
+  }
+  out("  A field states what is true now. The reason it changed belongs on the plan page,");
+  out("  never inside the field -- see reconcile.md section 5 in the wiki.");
+  if (strict && (bad.length || badW.length)) process.exit(1);
+  if (!strict && (bad.length || badW.length)) {
+    console.log("  Over the refuse column, but --strict was not passed, so this still publishes.");
+  }
 }
 
 if (bytes > SIZE_BUDGET) {

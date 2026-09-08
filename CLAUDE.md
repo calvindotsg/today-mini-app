@@ -10,7 +10,7 @@ cost a session.
 
 | Task | Command |
 |---|---|
-| Test | `npm test` (190 tests) — **serialised**, see below |
+| Test | `npm test` (195 tests) — **serialised**, see below |
 | Auth suite only | `npm run test:auth` (Telegram) · `npm run test:web` (browser/PWA) |
 | Dev server | `npm run dev` |
 | Deploy | `npm run deploy` — CI also does this on merge to `main`, **behind an approval** (trap 2) |
