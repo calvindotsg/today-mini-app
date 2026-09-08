@@ -197,9 +197,18 @@ function* strings(node, path = "") {
   }
 }
 
+const rawInput = readFileSync(file, "utf8");
+
+// 🔴 THE ONE-CHARACTER BYPASS, NAMED RATHER THAN LEFT TO BE DISCOVERED. `extractWeekState` accepts
+// a bare JSON file, and the usage line advertises it. Every prose measurement below is therefore
+// UNREACHABLE on that input -- silently, which is the shape of defect this file exists to refuse
+// elsewhere. It is not an error (a JSON input is a legitimate way to re-check a reduced payload),
+// but it must never look like a clean run of something that did not execute.
+const inputIsArtifact = !rawInput.trimStart().startsWith("{");
+
 let payload;
 try {
-  payload = reduceWeekState(extractWeekState(readFileSync(file, "utf8")), { generatedAt: sgtStamp() });
+  payload = reduceWeekState(extractWeekState(rawInput), { generatedAt: sgtStamp() });
 } catch (e) {
   console.error(`REFUSED: ${e.message}`);
   console.error("The week-state contract is owned by the skill that writes the artifact, not by");
@@ -229,6 +238,86 @@ console.log(`size      ${bytes} bytes (ceiling ${SIZE_BUDGET})`);
 console.log(`generated ${payload.generatedAt}`);
 console.log(`today     ${probe.today} — covered by this plan: ${probe.coversToday ? "yes" : "NO"}`);
 console.log(`now       ${probe.now ? probe.now.title : "(nothing ahead in the next three days)"}`);
+
+// ── THE LENGTH COUNTERS ──────────────────────────────────────────────────────────────────────
+//
+// MEASUREMENT ONLY. Nothing below refuses, warns, or changes an exit code -- it prints numbers.
+//
+// 🔴 WHY MEASUREMENT SHIPS BEFORE ENFORCEMENT. The `training-week-publish` routine runs this file
+// every night at 23:40 and is PURE TRANSPORT: it cannot rewrite the artifact and cannot ask. A
+// refusal there is an outage with no automated recovery, and there is precedent -- the 6 Sep
+// freshness stop left a week with no announce/ envelope for its whole first day. So the thresholds
+// are derived from what these counters report over real weeks, and only then enforced.
+//
+// WHAT THIS IS FOR. The weekly artifact grew too wordy to read on a phone, and the cause was
+// measured rather than guessed: across one week's six published payloads the session count held at
+// 13 and no session gained a field, while the fields themselves grew -- the worst single session
+// went 151 to 264 words and one `travel` went 136 to 428 characters, in a single day of reconciles.
+// Nothing was appended. Each field was rewritten to include the derivation of its own change.
+// These counters are what make that visible on the next publish instead of a month later.
+const WATCHED = ["oneRule", "intention", "travel", "text"]; // `text` is bed.text -- the leaf key
+const words = (s) => (s.trim() ? s.trim().split(/\s+/).length : 0);
+
+const fieldMax = new Map();
+for (const [path, s] of strings(payload)) {
+  const leaf = path.split(".").pop().replace(/\[\d+\]$/, "");
+  if (!WATCHED.includes(leaf)) continue;
+  const key = leaf === "text" ? "bed.text" : leaf;
+  const prev = fieldMax.get(key);
+  if (!prev || s.length > prev.n) fieldMax.set(key, { n: s.length, path });
+}
+
+const sessionWords = [];
+for (const day of payload.days) {
+  for (const s of day.sessions) {
+    let n = 0;
+    for (const [, v] of strings(s)) n += words(v);
+    sessionWords.push({ n, title: s.title, date: day.date });
+  }
+}
+sessionWords.sort((a, b) => b.n - a.n);
+let payloadWords = 0;
+for (const [, s] of strings(payload.days)) payloadWords += words(s);
+
+console.log("");
+console.log("lengths   measurement only — nothing below refuses or warns");
+for (const key of ["oneRule", "intention", "travel", "bed.text"]) {
+  const hit = fieldMax.get(key);
+  console.log(`          ${key.padEnd(10)} longest ${String(hit ? hit.n : 0).padStart(4)} chars${hit ? `  ${hit.path}` : "  (absent)"}`);
+}
+const worst = sessionWords[0];
+console.log(`          words per session  max ${worst ? worst.n : 0}${worst ? `  ${worst.date} ${worst.title.slice(0, 44)}` : ""}`);
+console.log(`          words across all ${payload.days.length} days  ${payloadWords}`);
+
+if (inputIsArtifact) {
+  // Rendered prose, counted from the HTML rather than from class names. There is no stable class
+  // vocabulary to count against -- two consecutive weeks of this artifact shared only 13 of ~48
+  // classes -- so the section boundary is <h2>, which is structure rather than styling.
+  const body = rawInput
+    .replace(/<!--[\s\S]*?-->/g, "")
+    .replace(/<script[\s\S]*?<\/script>/gi, "")
+    .replace(/<style[\s\S]*?<\/style>/gi, "");
+  // An apostrophe entity collapses a word in two if it becomes a space, so the few that sit
+  // INSIDE a word are mapped to a character and everything else to a separator.
+  const text = (h) => h
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&(?:rsquo|lsquo|apos|#8217|#39);/gi, "'")
+    .replace(/&[a-z]+;|&#\d+;/gi, " ");
+  const totalWords = words(text(body));
+  const sections = [];
+  const parts = body.split(/<h2[^>]*>/i);
+  for (const part of parts.slice(1)) {
+    const heading = words(text(part.split(/<\/h2>/i)[0])) ? text(part.split(/<\/h2>/i)[0]).trim().replace(/\s+/g, " ") : "(untitled)";
+    sections.push({ heading: heading.slice(0, 38), n: words(text(part)) });
+  }
+  sections.sort((a, b) => b.n - a.n);
+  console.log(`          rendered words on the page  ${totalWords}`);
+  for (const s of sections.slice(0, 4)) {
+    console.log(`          section ${String(s.n).padStart(4)}  ${s.heading}`);
+  }
+} else {
+  console.log("          prose counters SKIPPED — this input is JSON, not an artifact");
+}
 
 if (bytes > SIZE_BUDGET) {
   console.error(`REFUSED: ${bytes} bytes exceeds the ${SIZE_BUDGET} ceiling.`);
