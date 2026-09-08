@@ -224,6 +224,11 @@ body{
   background:repeating-linear-gradient(to bottom, black 0 2px, white 2px 4px)}
 .ruler b{position:absolute; right:0; width:50%; height:1rem; text-align:center;
   font:700 .6875rem/1rem var(--sans); color:white; background:firebrick}
+.readout{position:fixed; top:10rem; left:0; right:0; z-index:99; pointer-events:none;
+  background:gold; color:black; font:700 .75rem/1.25rem ui-monospace,Menlo,monospace;
+  padding:.25rem .375rem; white-space:pre-wrap; word-break:break-all}
+.satprobe{position:absolute; visibility:hidden; padding-top:env(safe-area-inset-top);
+  padding-bottom:env(safe-area-inset-bottom)}
 .r0{top:0}.r16{top:1rem}.r32{top:2rem}.r48{top:3rem}.r64{top:4rem}
 .r80{top:5rem}.r96{top:6rem}.r112{top:7rem}.r128{top:8rem}.r144{top:9rem}
 
@@ -1977,6 +1982,30 @@ details[open] > summary .disc{transform:rotate(90deg)}
     add(ruler, el("span", "st"));
     for (var ri = 0; ri < 10; ri++) add(ruler, el("b", "r" + (ri * 16), String(ri * 16)));
     document.body.appendChild(ruler);
+
+    // The numbers themselves. env() cannot be read from script directly, so a hidden element
+    // wears it as padding and the computed value is read back off that.
+    var probe = el("div", "satprobe");
+    document.body.appendChild(probe);
+    var out = el("div", "readout", "measuring");
+    document.body.appendChild(out);
+    var sample = function (label) {
+      var cs = getComputedStyle(probe);
+      var hdr = document.querySelector("header");
+      var r = hdr ? Math.round(hdr.getBoundingClientRect().top) : -1;
+      return label
+        + " sat=" + cs.paddingTop + " sab=" + cs.paddingBottom
+        + " scrollY=" + Math.round(window.pageYOffset || 0)
+        + " hdrTop=" + r
+        + " bodyPadTop=" + getComputedStyle(document.body).paddingTop
+        + " innerH=" + window.innerHeight + " screenH=" + screen.height
+        + " dm=" + ((window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) ? "standalone" : "browser");
+    };
+    var write = function () {
+      out.textContent = sample("A") + "\n" + (out.getAttribute("data-b") || "");
+    };
+    write();
+    setTimeout(function () { out.setAttribute("data-b", sample("B")); write(); }, 1500);
   }
 
   // SKIPPED ON /web/, NOT REPLACED WITH A SECOND EARLY RETURN. There is no launch to have there --
