@@ -37,10 +37,30 @@
   follows the OS. There is no single honest choice across all three, and getting it wrong is white
   text on a white ground at 6am -- on the one screen that exists to be readable at 6am.
 
-  It also means env(safe-area-inset-top) resolves to 0 in a standalone app, so the body's
-  `max(1.25rem, env(...))` floor supplies the padding. That is the floor working, not a gap: the
-  page does not run under the status bar, so there is no inset to respect. Do not flip this to make
-  that term fire -- changing what the app looks like in order to exercise a branch is backwards.
+  Under `default` iOS tints the bar from the theme-color meta, which syncChrome writes out of
+  --background, and derives the text colour from that colour's luminance -- so all three states are
+  handled without this page ever choosing. `black-translucent` removes the tint: the page shows
+  through, the text is light, and in the light theme that is light text on a near-white ground.
+  Reasoned, NOT measured, on both halves.
+
+  !! THE REST OF THIS PARAGRAPH USED TO BE WRONG, AND WRONG IN THE DIRECTION THAT COSTS MOST. It
+  said the page does not run under the status bar in a standalone app, so there was no inset to
+  respect and the body's own margin was the floor working rather than a gap -- and it told the next
+  session not to flip this meta to make env(safe-area-inset-top) fire. Calvin's phone says
+  otherwise: in the installed app the header rendered UNDER the Dynamic Island, faded out by iOS's
+  own blur, at scroll zero. The page is composited full screen there and `max(1.25rem, env(...))`
+  did not clear the bar. The floor that fixes it is scoped to the installed app -- see
+  `:root[data-installed]` in the stylesheet and the stamp that sets it near the foot of the script.
+
+  !! WHICH of the two causes that is remains UNMEASURED, and the fix cannot settle it. Either iOS
+  reports 0 while compositing full screen -- `viewport-fit=cover` and `default` disagreeing -- or it
+  reports the real inset and the blur reaches below it. Both want more top padding, which is why
+  the fix does not depend on the answer; but a bigger floor and a firing env() draw the SAME
+  screenshot, so the fixed screen is not evidence either way. To settle it, set padding-top to a
+  bare env(safe-area-inset-top) for ONE capture on the phone. Non-zero means the floor was the whole
+  problem. Zero means this meta is the real fault and `black-translucent` is the root fix -- at
+  which point the paragraph above stops being a preference and becomes the thing standing in
+  its way.
 -->
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <!--
@@ -162,7 +182,11 @@ body{
      resolves to 0 and the omission was invisible. The same document served as a home-screen web
      app owns the whole screen, and there the header renders under the Dynamic Island.
      `max()` rather than a bare env() so the page keeps its own margin where the inset is 0,
-     which is the same floor-not-fallback shape --nav-inset uses. */
+     which is the same floor-not-fallback shape --nav-inset uses.
+     !! THIS TOP FLOOR IS NOT ENOUGH IN THE INSTALLED APP -- measured on the phone, the header
+     still rendered under the Dynamic Island. The rule immediately below raises it there, and
+     ONLY there. Do not raise it here instead: Telegram's route is correct today and a global
+     floor would give it sixty pixels of dead space at the top of every screen. */
   padding-top:max(1.25rem, env(safe-area-inset-top));
   padding-right:max(1rem, env(safe-area-inset-right));
   padding-left:max(1rem, env(safe-area-inset-left));
@@ -171,6 +195,21 @@ body{
      fixed width, and the one long-word field (place) gets an explicit break. */
   max-width:34rem; margin-inline:auto;
 }
+
+/* !! THE INSTALLED APP OWNS THE WHOLE SCREEN, AND ONLY THE INSTALLED APP MAY HAVE THIS.
+   Additive rather than a replacement: where env() DOES report an inset the page still gets its own
+   1.25rem of margin below the status bar, which a bare `max(4.75rem, env(...))` would swallow at
+   exactly the sizes that matter. The 4.75rem floor is what carries the case where env() reports
+   nothing -- 76px, clearing the tallest status bar iOS currently draws (59pt) with room to spare,
+   and within 3px of what the additive term gives on that same device. Those two numbers being
+   close is deliberate: the screen looks the same whichever of the two causes is the real one.
+
+   !! THE ATTRIBUTE IS SET FROM THE ROUTE AS WELL AS THE DISPLAY MODE, and the route half is the
+   load-bearing one. Whether Telegram's iOS webview matches `display-mode: standalone` is unknown
+   and neither session could measure it; scoping to /web/ means it never has to be known. This is
+   also the house idiom rather than a workaround -- deriving per-request behaviour on the client is
+   what keeps / and /web/ byte-identical, which is the whole deploy proof. */
+:root[data-installed] body{padding-top:max(4.75rem, calc(env(safe-area-inset-top) + 1.25rem))}
 
 /* THE ONLY TWO PLACES A TRACKED-OUT CAPITAL RUN SURVIVES. It was on eleven, across the week
    label, every card's kind, the clock's own label, both definition terms and the why block --
@@ -1903,6 +1942,17 @@ details[open] > summary .disc{transform:rotate(90deg)}
   // Deriving it here also means / and /web/ serve BYTE-IDENTICAL
   // bytes, which makes the two documents incapable of drifting apart rather than merely unlikely to.
   var web = location.pathname.indexOf("/web/") === 0;
+
+  // !! THE INSTALLED APP'S TOP INSET, STAMPED HERE BECAUSE NOTHING ELSE CAN SEE BOTH HALVES.
+  // Set before the early return below and before renderSkeleton, so the body is still empty when
+  // the padding changes and there is no visible reflow. BOTH conditions are required: the media
+  // query is the honest signal, and `web` is what makes a Telegram regression structurally
+  // impossible rather than merely unlikely -- see the rule this stamps, in the stylesheet.
+  try {
+    if (web && window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) {
+      docEl.setAttribute("data-installed", "");
+    }
+  } catch (e) { /* no matchMedia is no installed app; the page keeps its own top margin */ }
 
   // SKIPPED ON /web/, NOT REPLACED WITH A SECOND EARLY RETURN. There is no launch to have there --
   // the reader is proven by a first-party cookie instead. Returning here would leave them on a

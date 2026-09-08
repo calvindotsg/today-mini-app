@@ -372,6 +372,27 @@ test("the bar keeps its scroll edge effect, which is not decoration", async () =
     /#[0-9a-fA-F]{6}|rgba?\(/, "the effect must be built from --background, never a literal scrim");
 });
 
+test("the installed app clears the status bar, and nothing else is given that floor", async () => {
+  const res = await fetch(`${BASE}/`);
+  const body = await res.text();
+  // Reported from the phone: in the home-screen app the header rendered UNDER the Dynamic Island
+  // at scroll zero, faded out by iOS's own blur. The page's own 1.25rem top margin is all that
+  // applied, so whatever env(safe-area-inset-top) reports there, it does not clear the bar.
+  assert.match(body, /:root\[data-installed\] body\{padding-top:max\(4\.75rem, calc\(env\(safe-area-inset-top\) \+ 1\.25rem\)\)\}/,
+    "the installed app gets a floor that clears the status bar, additive so a real inset still keeps the page's margin");
+  // THE `web &&` IS THE LOAD-BEARING HALF. Whether Telegram's iOS webview matches
+  // `display-mode: standalone` is unmeasured by either session; scoping to the route is what makes
+  // a Telegram regression impossible rather than unlikely. Pin the whole condition, not the
+  // setAttribute -- a stamp that fires everywhere passes any test that only looks for the stamp.
+  assert.match(body, /if \(web && window\.matchMedia && window\.matchMedia\("\(display-mode: standalone\)"\)\.matches\) \{\s*docEl\.setAttribute\("data-installed", ""\);/,
+    "the floor is stamped only on the /web/ route AND only when running as an installed app");
+  // The other direction of the same rule: the UNSCOPED floor must stay the page's own margin.
+  // Raising it here instead would fix the installed app and give Telegram -- which is correct
+  // today -- sixty pixels of dead space at the top of every screen.
+  assert.match(body, /padding-top:max\(1\.25rem, env\(safe-area-inset-top\)\);/,
+    "the shared floor stays the page's own margin");
+});
+
 test("GET /s is refused -- the app is not reachable without a POSTed launch", async () => {
   await assertDenied(await fetch(`${BASE}/s`), "GET /s");
 });
