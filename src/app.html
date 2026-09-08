@@ -161,23 +161,6 @@
   --nav-inset:max(var(--sa-bottom, 0px), env(safe-area-inset-bottom), 0.5rem);
 }
 
-/* !! TEMPORARY DIAGNOSTIC, SECOND ATTEMPT. DELETE ALL OF IT.
-   The first ruler was position:fixed and therefore INVISIBLE to the thing it was measuring: iOS 26's
-   scroll edge effect blurs a scroll view's CONTENT, and a fixed element is not part of that content.
-   It read 254.8 crisp at every depth while the header two lines away was visibly out of focus.
-   So this one sits in NORMAL FLOW, as the first thing in the body, with the body's top padding
-   temporarily zeroed so row 0 really is the top of the scroll view.
-   Fine 2px stripes on the left, because a blur destroys a fine pattern where it leaves flat colour
-   looking untouched. Twelve-pixel rows, labelled with their offset, so the depth can be read off
-   directly rather than bracketed. The change that reads this deletes it. */
-.probe{position:relative; height:6rem; margin:0 0 1rem 0}
-.probe .st{position:absolute; top:0; bottom:0; left:0; width:50%;
-  background:repeating-linear-gradient(to bottom, black 0 2px, white 2px 4px)}
-.probe b{position:absolute; right:0; width:50%; height:.75rem; text-align:center;
-  font:700 .625rem/.75rem var(--sans); color:white; background:firebrick}
-.p0{top:0}.p12{top:.75rem}.p24{top:1.5rem}.p36{top:2.25rem}
-.p48{top:3rem}.p60{top:3.75rem}.p72{top:4.5rem}.p84{top:5.25rem}
-
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
 body{
@@ -206,13 +189,23 @@ body{
      below the bar. Padding sized for one state is wrong in the other, and this is the whole of
      the defect that was reported as the header being washed out "upon first page open": at 20px
      it spent that moment underneath the status bar.
+     !! --top-gap IS 3rem IN THE INSTALLED APP, AND THAT NUMBER IS MEASURED. iOS 26 draws a
+     scroll edge effect over the top of the scroll view there, which BLURS content rather than
+     dimming it. Measured off a probe in normal flow: stripe contrast climbs from 34 at the very
+     top to a fully crisp 255 at 37.3px, so anything above ~37px is softened. 3rem clears it with
+     11px to spare. It is NOT 1.25rem because that puts the header inside the effect, and it is
+     not the 4.75rem of an earlier attempt, which cleared it by 39px and read as a void.
+     !! THE FIRST PROBE COULD NOT SEE THIS. It was position:fixed, and a fixed element is not part
+     of a scroll view's content, so the effect never touched it -- it reported 254.8 crisp at every
+     depth while the header two lines away was visibly out of focus. If you re-measure this, put
+     the instrument in FLOW.
+     Telegram keeps the 1.25rem default: its webview draws no such effect, and the token is only
+     stamped on the installed app.
      ADDITIVE, not max(). The inset and the page's own margin are not alternatives -- one clears
      the hardware, the other is the design's breathing room, and the header wants both. max() of
      the two sources rather than of the margin: whichever source actually knows the inset wins,
      and they never double count because only one is ever non-zero. */
-  padding-top:calc(max(env(safe-area-inset-top), var(--sa-top, 0px)) + 1.25rem);
-  /* TEMPORARY: the probe below has to start at the exact top of the scroll view. */
-  padding-top:0;
+  padding-top:calc(max(env(safe-area-inset-top), var(--sa-top, 0px)) + var(--top-gap, 1.25rem));
   padding-right:max(1rem, env(safe-area-inset-right));
   padding-left:max(1rem, env(safe-area-inset-left));
   padding-bottom:calc(var(--nav-h) + var(--nav-inset) + 1.5rem);
@@ -1877,7 +1870,12 @@ details[open] > summary .disc{transform:rotate(90deg)}
     window.scrollTo(0, 0);
     lastY = 0;
     navEl.removeAttribute("data-min");
-    root.focus();
+    // !! preventScroll IS LOAD-BEARING, AND WITHOUT IT THE LINE ABOVE IS UNDONE. #root is taller
+    // than the viewport, so focus() scrolls its top edge to the top of the scroll view -- which
+    // scrolls away exactly the body's top padding and drops the header into the scroll edge
+    // effect. Measured: the cold start was correct and BOTH tab taps were not, which is the shape
+    // of a bug in show() rather than in the padding.
+    root.focus({ preventScroll: true });
   }
 
   // THE GEAR IS A SHORTCUT TO THE CONTROL, NEVER ITS ONLY HOME -- and that distinction is the
@@ -1954,15 +1952,6 @@ details[open] > summary .disc{transform:rotate(90deg)}
   // bytes, which makes the two documents incapable of drifting apart rather than merely unlikely to.
   var web = location.pathname.indexOf("/web/") === 0;
 
-  // !! TEMPORARY DIAGNOSTIC. DELETE WITH THE RULE IT DRAWS.
-  // Inserted BEFORE #root so it is the first thing in the scroll view, and in flow so the scroll
-  // edge effect can actually reach it -- which is exactly what the fixed version could not do.
-  if (web) {
-    var probe = el("div", "probe");
-    add(probe, el("span", "st"));
-    for (var pi = 0; pi < 8; pi++) add(probe, el("b", "p" + (pi * 12), String(pi * 12)));
-    document.body.insertBefore(probe, document.body.firstChild);
-  }
 
   // !! THE TOP INSET THE STYLESHEET CANNOT SEE. Measured, not reasoned -- see the comment on the
   // body's padding-top. env(safe-area-inset-top) is 0 in this app in both states, so the page has
@@ -1983,6 +1972,15 @@ details[open] > summary .disc{transform:rotate(90deg)}
     docEl.style.setProperty("--sa-top", (gap > 0 ? 0 : (learnedTopInset || 59)) + "px");
   }
   syncTopInset();
+
+  // !! THE BLUR IS ONLY DRAWN IN THE INSTALLED APP, so only the installed app pays for clearing it.
+  // Both conditions: the media query is the honest signal for "running as an installed app", and
+  // `web` makes a Telegram regression structurally impossible rather than merely unlikely.
+  try {
+    if (web && window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) {
+      docEl.style.setProperty("--top-gap", "3rem");
+    }
+  } catch (e) { /* no matchMedia is no installed app, and the default gap is already right */ }
   // The settle is a resize, and it is the event this exists to catch. Rotation is the other one.
   window.addEventListener("resize", syncTopInset);
 

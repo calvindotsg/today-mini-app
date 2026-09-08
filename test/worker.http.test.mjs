@@ -380,8 +380,19 @@ test("the header clears the status bar in BOTH of the launch states, not just th
   // the only source that knows about the top edge, and env() is kept because it is the correct one
   // wherever it does work. max() of the two SOURCES, then add the page's own margin -- additive,
   // because clearing the hardware and having a margin are different jobs.
-  assert.match(body, /padding-top:calc\(max\(env\(safe-area-inset-top\), var\(--sa-top, 0px\)\) \+ 1\.25rem\);/,
-    "the top padding takes the inset from whichever source knows it, and adds the page's margin");
+  assert.match(body, /padding-top:calc\(max\(env\(safe-area-inset-top\), var\(--sa-top, 0px\)\) \+ var\(--top-gap, 1\.25rem\)\);/,
+    "the top padding takes the inset from whichever source knows it, and adds the gap");
+  // MEASURED, not chosen: iOS 26's scroll edge effect blurs the top 37.3px of the scroll view in
+  // the installed app, so 1.25rem puts the header inside it. 3rem clears it with 11px to spare.
+  // Both conditions on the stamp -- `web` is what keeps Telegram, which has no such effect and is
+  // correct at the 1.25rem default, structurally out of reach.
+  assert.match(body, /if \(web && window\.matchMedia && window\.matchMedia\("\(display-mode: standalone\)"\)\.matches\) \{\s*docEl\.style\.setProperty\("--top-gap", "3rem"\);/,
+    "the installed app gets a gap that clears the blur, and nothing else does");
+  // WITHOUT preventScroll THE PADDING IS UNDONE ON EVERY TAB SWITCH. #root is taller than the
+  // viewport, so focus() scrolls its top to the top of the scroll view and the header lands inside
+  // the effect. Measured on the phone: cold start correct, both tab taps wrong.
+  assert.match(body, /root\.focus\(\{ preventScroll: true \}\);/,
+    "focusing the screen must not scroll the top padding away");
   // THE CONDITION, NOT THE CALL. A syncTopInset that always wrote 0 would leave every assertion
   // about its existence green while the header spent every launch under the status bar.
   assert.match(body, /var gap = sh - window\.innerHeight;\s*if \(gap > 0\) learnedTopInset = gap;/,
@@ -403,7 +414,7 @@ test("no diagnostic survives into the served document", async () => {
   // Two temporary instruments were shipped to production to measure the inset -- a striped ruler
   // and a numeric readout -- because no browser available here could produce those numbers. Both
   // were meant to be deleted by the change that read them. This is the check that they were.
-  assert.doesNotMatch(body, /\.ruler\{|\.readout\{|satprobe|data-installed/,
+  assert.doesNotMatch(body, /\.ruler\{|\.readout\{|\.probe\{|satprobe|data-installed/,
     "a measuring instrument was left in the page that a reader will see");
 });
 
