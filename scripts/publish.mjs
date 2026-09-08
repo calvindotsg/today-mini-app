@@ -335,6 +335,14 @@ for (const [, s] of strings(payload.days)) payloadWords += words(s);
 //    A warning on half the week every week is noise, and noise is how a gate gets switched off.
 //    Raised to 200 and 160, which are above both weeks' first publish and below what a reconcile
 //    grows them to.
+//
+// 🔴 AND THE COVERAGE FLOOR BELOW *DOES* FIRE ON A FIRST PUBLISH -- read this before concluding
+// rule 2 was broken. Measured across the twelve committed payloads: all six of the week of 7 Sep
+// are CLEAN, and every one of the week of 31 Aug trips one to three times. Those trips are two BFT
+// classes and a bike shakedown carrying no `place`, which is the exact defect the shape contract
+// was later written to name. Rule 2 forbids a gate that fires on content which is RIGHT -- a
+// 156-character travel that is entirely operational. It does not protect content that is wrong
+// merely because it shipped. The older week predates the contract; it is evidence FOR the floor.
 const LIMITS = {
   oneRule:    { warn: 200, refuse: 320 },
   intention:  { warn: 240, refuse: 320 },
@@ -410,6 +418,59 @@ if (inputIsArtifact) {
   console.log("          prose counters SKIPPED — this input is JSON, not an artifact");
 }
 
+// ── COVERAGE: THE FLOOR, BECAUSE EVERY OTHER GATE IN THIS FILE IS A CEILING ───────────────────
+//
+// 🔴 FOUND BY TESTING THE INSTRUCTIONS END TO END, NOT BY REASONING. A fresh session given only
+// the rewritten skill produced a page 60% shorter that passed --strict on its FIRST attempt -- and
+// had dropped `place` from six of eleven sessions. Short is not the same as good, and until this
+// block existed nothing here could tell the two apart. Adding a length budget without adding this
+// made omission MORE likely, not less: the budget puts pressure on exactly the fields a session is
+// tempted to drop.
+//
+// WHAT IS REQUIRED, AND WHY ONLY THESE TWO. `place` is where to physically go, and the shape
+// contract says it is required on every session "the gym included: naming the venue in a title is
+// not a substitute". `oneRule` is the decision taken before the session starts. Both are read at
+// 06:15 with no chance to ask. `numbers`, `intention` and `travel` are COUNTED AND NEVER REFUSED --
+// a BFT class publishes no load or percentage, so `numbers` at 8/10 is correct, not a defect.
+//
+// 🔴 THE SCOPE IS A DENYLIST, NOT AN ALLOWLIST, AND THE DIRECTION IS THE WHOLE POINT. A week may
+// publish things that are not training -- a body scan, a meeting, a wake time -- and those have no
+// place or rule to state. Listing what IS training would mean an unrecognised kind silently escapes
+// the floor, which is the failure week-state.md names: "any parser is a bet on next week's design,
+// and its failure mode is the bad one -- it does not refuse, it quietly extracts the wrong thing."
+// Listing what is NOT training means an unrecognised kind gets CHECKED and fails loudly, and the
+// fix is one word in this list.
+const NOT_TRAINING = ["bed", "wake", "scan", "social", "meeting", "appointment", "travel", "rest"];
+const kindWord = (s) => String(s.kind || "").trim().split(/[\s·|,-]+/)[0].toLowerCase();
+
+const training = [];
+const exempt = [];
+for (let di = 0; di < payload.days.length; di++) {
+  for (let si = 0; si < payload.days[di].sessions.length; si++) {
+    const s = payload.days[di].sessions[si];
+    if (s.status !== "planned") continue;
+    const v = { s, date: payload.days[di].date, title: s.title, path: `days[${di}].sessions[${si}]` };
+    (NOT_TRAINING.includes(kindWord(s)) ? exempt : training).push(v);
+  }
+}
+const covered = (list, k) => list.filter((v) => v.s[k] && (!Array.isArray(v.s[k]) || v.s[k].length)).length;
+
+const missingCoverage = [];
+for (const v of training) {
+  const gaps = ["place", "oneRule"].filter((k) => !v.s[k]);
+  if (gaps.length) missingCoverage.push({ ...v, gaps });
+}
+
+console.log("");
+console.log(`coverage  ${training.length} training session(s) still to come${exempt.length ? `, ${exempt.length} exempt by kind` : ""}`);
+for (const k of ["place", "oneRule"]) {
+  const n = covered(training, k);
+  console.log(`          ${k.padEnd(10)} ${String(n).padStart(2)}/${training.length}  REQUIRED${n < training.length ? "  <- gap" : ""}`);
+}
+for (const k of ["numbers", "intention", "travel"]) {
+  console.log(`          ${k.padEnd(10)} ${String(covered(training, k)).padStart(2)}/${training.length}  counted, never refused`);
+}
+
 // ⚠️ SPENT SESSIONS SHIP FIELDS THE APP NEVER DRAWS, and this is a warning rather than a refusal
 // for one measured reason: it fires on EVERY payload in the corpus including both first publishes,
 // so refusing it would break tonight before the skill that writes it has been changed.
@@ -428,23 +489,38 @@ if (spentFields > 0) {
   console.log("          bytes on a mobile connection that nobody can read. Not a refusal.");
 }
 
-if (overLimit.length || overWords.length) {
+// ⚠️ ONE BLOCK REPORTS BOTH THE CEILING AND THE FLOOR, deliberately. Refusing on length first
+// would send a session away to shorten a page, and only on the next run tell it that a field is
+// missing -- two round trips to learn two things that were both true on the first.
+if (overLimit.length || overWords.length || missingCoverage.length) {
   const bad = overLimit.filter((v) => v.n > v.lim.refuse);
   const badW = overWords.filter((v) => v.n > SESSION_WORDS.refuse);
-  const out = strict && (bad.length || badW.length) ? console.error : console.log;
-  const verb = strict && (bad.length || badW.length) ? "REFUSED:" : "warning  ";
+  const fails = bad.length || badW.length || missingCoverage.length;
+  const out = strict && fails ? console.error : console.log;
+  const verb = strict && fails ? "REFUSED:" : "warning  ";
   out("");
-  out(`${verb} ${overLimit.length} field(s) and ${overWords.length} session(s) are longer than this week needs.`);
-  for (const v of overLimit) {
-    out(`  ${v.path}: ${v.n} chars (warn ${v.lim.warn}, refuse ${v.lim.refuse})`);
+  if (overLimit.length || overWords.length) {
+    out(`${verb} ${overLimit.length} field(s) and ${overWords.length} session(s) are longer than this week needs.`);
+    for (const v of overLimit) {
+      out(`  ${v.path}: ${v.n} chars (warn ${v.lim.warn}, refuse ${v.lim.refuse})`);
+    }
+    for (const v of overWords) {
+      out(`  ${label(v)}: ${v.n} words (warn ${SESSION_WORDS.warn}, refuse ${SESSION_WORDS.refuse})`);
+    }
+    out("  A field states what is true now. The reason it changed belongs on the plan page,");
+    out("  never inside the field -- see reconcile.md section 5 in the wiki.");
   }
-  for (const v of overWords) {
-    out(`  ${label(v)}: ${v.n} words (warn ${SESSION_WORDS.warn}, refuse ${SESSION_WORDS.refuse})`);
+  if (missingCoverage.length) {
+    out(`${verb} ${missingCoverage.length} training session(s) are missing something the app draws.`);
+    for (const v of missingCoverage) {
+      out(`  ${label(v)}: no ${v.gaps.join(", no ")}`);
+    }
+    out("  `place` is where to go and `oneRule` is the decision taken before the session starts;");
+    out("  both are read at 06:15 with no chance to ask. A shorter page that drops them is not a");
+    out("  better page. If a session genuinely is not training, its kind belongs in NOT_TRAINING.");
   }
-  out("  A field states what is true now. The reason it changed belongs on the plan page,");
-  out("  never inside the field -- see reconcile.md section 5 in the wiki.");
-  if (strict && (bad.length || badW.length)) process.exit(1);
-  if (!strict && (bad.length || badW.length)) {
+  if (strict && fails) process.exit(1);
+  if (!strict && fails) {
     console.log("  Over the refuse column, but --strict was not passed, so this still publishes.");
   }
 }

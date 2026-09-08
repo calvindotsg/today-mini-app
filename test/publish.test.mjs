@@ -50,6 +50,10 @@ function weekState(overrides = {}) {
       sessions: [{
         kind: "Run · 18:43", title: "6 km with Bryan", status: "planned",
         at: "2026-08-31T18:43", oneRule: "Hold the announced pace.", sport: "run",
+        // 🔴 `place` IS PART OF A VALID WEEK, not decoration. The coverage floor requires it on
+        // every training session, so a fixture without one is not "a clean week" -- it is a week
+        // missing the field the athlete needs to know where to go.
+        place: "East Coast Park",
       }],
     }],
     ...overrides,
@@ -453,6 +457,60 @@ test("fields on a spent session warn and never refuse", () => {
 
   assert.equal(r.code, 0, "a spent session must never block a publish");
   assert.match(r.out, /field\(s\) on done\/missed\/skipped sessions are published and never drawn/);
+});
+
+test("a training session with no place is REFUSED for a person and warns for the cron", () => {
+  // 🔴 THE FLOOR. Every other gate in publish.mjs is a ceiling; this is the only one that asks
+  // what is MISSING. It exists because a fresh session given the rewritten skill produced a page
+  // 60% shorter that passed --strict on its first attempt, having dropped `place` from six of
+  // eleven sessions. Short is not the same as good.
+  const ws = weekState();
+  delete ws.days[0].sessions[0].place;
+
+  const cron = publish(ws, "floor-cron");
+  assert.equal(cron.code, 0, "the nightly transport path cannot fix it and must still ship");
+  assert.match(cron.out, /1 training session\(s\) are missing something the app draws/);
+  assert.match(cron.out, /days\[0\]\.sessions\[0\]: no place/);
+
+  const person = publishStrict(ws, "floor-person");
+  assert.equal(person.code, 1, "a person running it must be stopped");
+  assert.match(person.err, /no place/);
+});
+
+test("an unrecognised kind is CHECKED, because the scope is a denylist and not an allowlist", () => {
+  // 🔴 THE DIRECTION IS THE WHOLE POINT. Listing what IS training would let a kind nobody
+  // thought of escape the floor silently -- week-state.md's named failure: "any parser is a bet on
+  // next week's design, and its failure mode is the bad one -- it does not refuse, it quietly
+  // extracts the wrong thing." Listing what is NOT training makes the unknown case fail loudly.
+  const ws = weekState();
+  delete ws.days[0].sessions[0].place;
+  ws.days[0].sessions[0].kind = "Yoga · 18:43";
+
+  const r = publishStrict(ws, "floor-unknown-kind");
+  assert.equal(r.code, 1, "a kind this file has never seen must still be held to the floor");
+  assert.match(r.err, /no place/);
+});
+
+test("a session that is not training is exempt, and the exemption is REPORTED", () => {
+  // A week may carry a body scan or a meeting, which have no place or rule to state. The exemption
+  // is printed rather than applied silently, so a session can see the denylist did something.
+  const ws = weekState();
+  delete ws.days[0].sessions[0].place;
+  ws.days[0].sessions[0].kind = "Scan · 18:43";
+
+  const r = publishStrict(ws, "floor-exempt");
+  assert.equal(r.code, 0, r.err);
+  assert.match(r.out, /1 exempt by kind/);
+});
+
+test("numbers is counted and never refused, because a gym class publishes none", () => {
+  // ⚠️ A FLOOR THAT DOES NOT TOLERATE A LEGITIMATE GAP IS A CEILING'S MIRROR IMAGE. Two BFT
+  // classes in the live corpus publish no load or percentage at all, so `numbers` at 7/9 is
+  // correct rather than a defect. It is reported so a person can judge it, and never enforced.
+  const ws = weekState();
+  const r = publishStrict(ws, "floor-numbers");
+  assert.equal(r.code, 0, r.err);
+  assert.match(r.out, /numbers\s+0\/1\s+counted, never refused/);
 });
 
 test("the default path names no session, because a cron reports its whole stdout", () => {
