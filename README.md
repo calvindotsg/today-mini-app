@@ -163,7 +163,7 @@ own `initData` against it, so every auth path is exercised without a real creden
 
 | Command | What it does |
 | --- | --- |
-| `npm test` | The whole suite, 204 tests |
+| `npm test` | The whole suite, 197 tests |
 | `npm run test:auth` | Just the Telegram HTTP auth suite, against the real Worker in the real runtime |
 | `npm run test:web` | The same, for the browser and home-screen way in |
 | `npm run dev` | `wrangler dev` on an emulated KV |
@@ -209,8 +209,11 @@ Over the limit, the publisher **refuses with `--strict` and warns without it**. 
 `training-week-publish` routine is pure transport: it cannot rewrite the artifact and it cannot
 ask, so a length refusal there is an outage with no recovery — and there is precedent, a freshness
 stop once left a week with no `announce/` envelope for its whole first day. **A stale phone is a
-worse failure than a wordy one.** The markup, store-reference and acronym gates refuse on both
-paths, because those are correctness rather than style.
+worse failure than a wordy one.** The markup gate refuses on both paths, because it is
+correctness rather than style. ⚠️ **The language gates — acronyms, wiki references, the store's
+private vocabulary, revision language — left this publisher on 2026-09-13** for the wiki's
+`tools/plain.py`, the single copy of those rules, which runs on every `published/<stem>.json` in
+the wiki's own CI before a record can reach this app.
 
 ⚠️ **A refusal now clears `dist/` first.** Every refusal exits before the payload is written, so a
 refused run used to leave the *previous* run's payload in place — and the next step in the ship

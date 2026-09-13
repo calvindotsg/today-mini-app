@@ -186,7 +186,9 @@ something to leave the house for.
   omission.
 
   **This is now enforced rather than remembered:** `scripts/publish.mjs` refuses any published
-  string containing a tag or an HTML entity, naming the field. That gate covers `bed.text` and
+  string containing a tag or an HTML entity, naming the field. (Its *language* — acronyms, wiki
+  paths, forecast ids, the store's private words — is gated upstream by the wiki's `tools/plain.py`
+  since 2026-09-13, the one copy of those rules; this publisher no longer reads English.) That gate covers `bed.text` and
   `tag` in future weeks too, without anyone having to notice first.
 
 ⚠️ **`numbers` and `bring` are published as whole structures**, with no per-element filtering — an
