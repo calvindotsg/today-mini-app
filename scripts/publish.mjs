@@ -91,8 +91,25 @@ const noNotify = args.includes("--no-notify");
 // store-reference and acronym gates below refuse on both paths regardless: those are correctness,
 // and this one is style.
 const strict = args.includes("--strict");
+// 🔴 --reconcile <wiki-root>: ARITHMETIC ON COMPLETED ACTIVITIES, AND NOTHING ELSE.
+//
+// On 2026-09-18 the 23:40 run published Friday's gym class as `planned` eleven hours after the
+// wiki had ingested its Strava record (PR 529, filed as issue 530). The routine is pure transport
+// by the athlete's 2026-09-02 ruling -- "arithmetic on completed activities is the routine's;
+// meaning is not" -- so the repair has to stay on the arithmetic side of that line. This flag does
+// exactly one thing: a `planned` session whose time has passed, with a reduced Strava record of the
+// same class on the same date in `<wiki-root>/raw/strava/`, is published as `done`. Nothing else on
+// the session changes, nothing is ever marked `missed` (a missing record is "not yet ingested"
+// until a person says otherwise), and a session with no Strava class -- a race-pack collection, a
+// dinner -- is left alone and NAMED in the report, because no instrument can see it.
+const reconcileIdx = args.indexOf("--reconcile");
+const reconcileRoot = reconcileIdx >= 0 ? args[reconcileIdx + 1] : null;
+if (reconcileIdx >= 0 && (!reconcileRoot || reconcileRoot.startsWith("--"))) {
+  console.error("usage: --reconcile needs the wiki root, e.g. --reconcile ../hermes-training-wiki");
+  process.exit(2);
+}
 if (!file) {
-  console.error("usage: publish.mjs <week.html|week-state.json> [--put] [--no-notify] [--strict]");
+  console.error("usage: publish.mjs <week.html|week-state.json> [--put] [--no-notify] [--strict] [--reconcile <wiki-root>]");
   process.exit(2);
 }
 
@@ -191,6 +208,108 @@ try {
   console.error("this repository. If it has changed, fix src/reduce.js and CONTRACT.md --");
   console.error("do not loosen the check so a half-understood plan gets published.");
   process.exit(1);
+}
+
+// ── RECONCILE: past `planned` sessions against the wiki's reduced Strava records ──────────────
+//
+// The match is the one scripts/reconcile.py in the wiki already makes -- same DATE, same sport
+// CLASS -- restated here in a dozen lines rather than imported, because this file runs where that
+// script's interpreter may not. What counts as a class is deliberately coarse: run, ride, gym.
+// A record's `sport` is Strava's sport_type; a session's class is its `sport` field when present,
+// else the first word of its `kind`. Anything that maps to neither is not reconcilable here.
+//
+// 🔴 THE NEWEST STEM PER ID WINS. A re-fetch lands as `<id>--<fetchedAt>.json` beside `<id>.json`;
+// globbing both would count one session twice, and a doubled morning reads like a real one.
+//
+// ⚠️ WHAT THIS NEVER DOES: mark `missed`, touch a session still to come, add numbers or prose, or
+// consume one record for two sessions. A record matches at most one session, the nearest by start
+// time and within three hours; the leftovers are printed, not decided.
+const RECORD_CLASS = {
+  run: new Set(["Run", "TrailRun", "VirtualRun"]),
+  ride: new Set(["Ride", "VirtualRide", "GravelRide", "MountainBikeRide", "EBikeRide"]),
+  gym: new Set(["WeightTraining", "Workout", "Crossfit", "HighIntensityIntervalTraining", "Elliptical", "StairStepper", "Rowing"]),
+};
+const classOfRecord = (sport) => Object.keys(RECORD_CLASS).find((c) => RECORD_CLASS[c].has(sport)) ?? null;
+const classOfSession = (s) => {
+  if (s.sport === "run" || s.sport === "ride") return s.sport;
+  const w = String(s.kind || "").trim().split(/[\s·|,-]+/)[0].toLowerCase();
+  return w === "run" || w === "ride" || w === "gym" ? w : null;
+};
+const naiveSgt = (iso) => new Date(`${iso.slice(0, 19)}+08:00`).getTime();
+
+function loadReducedRecords(root) {
+  const dir = resolve(root, "raw", "strava");
+  const newest = new Map(); // id -> { stem, path }
+  for (const f of readdirSync(dir)) {
+    const m = /^(\d{6,})(?:--([^.]+))?\.json$/.exec(f);
+    if (!m) continue;
+    const prev = newest.get(m[1]);
+    if (!prev || (m[2] ?? "") > (prev.stem ?? "")) newest.set(m[1], { stem: m[2] ?? "", path: resolve(dir, f) });
+  }
+  const out = [];
+  for (const [id, { path }] of newest) {
+    const r = JSON.parse(readFileSync(path, "utf8"));
+    const cls = classOfRecord(r.sport);
+    if (!cls || typeof r.start_local !== "string") continue;
+    out.push({ id, cls, date: r.start_local.slice(0, 10), startMs: naiveSgt(r.start_local), used: false });
+  }
+  return out;
+}
+
+function reconcileAgainstRecords(payload, records, nowMs) {
+  const MATCH_WINDOW_MS = 3 * 3600_000;
+  const past = [], unseen = [];
+  for (let di = 0; di < payload.days.length; di++) {
+    const day = payload.days[di];
+    for (let si = 0; si < day.sessions.length; si++) {
+      const s = day.sessions[si];
+      if (s.status !== "planned" || !s.at) continue;
+      const endMs = s.until ? naiveSgt(s.until) : naiveSgt(s.at) + 2 * 3600_000;
+      if (endMs > nowMs) continue;                      // still to come, or under way: not ours
+      const v = { s, path: `days[${di}].sessions[${si}]`, date: day.date, title: s.title, cls: classOfSession(s), atMs: naiveSgt(s.at) };
+      (v.cls ? past : unseen).push(v);
+    }
+  }
+  // Nearest pair first, across the whole week, so a record beside two sessions goes to the one it
+  // is closest to rather than the one the artifact happens to list first.
+  const pairs = [];
+  for (const v of past) {
+    for (const r of records) {
+      if (r.cls !== v.cls || r.date !== v.date) continue;
+      const gap = Math.abs(r.startMs - v.atMs);
+      if (gap <= MATCH_WINDOW_MS) pairs.push({ v, r, gap });
+    }
+  }
+  pairs.sort((a, b) => a.gap - b.gap);
+  const flipped = [];
+  for (const { v, r } of pairs) {
+    if (r.used || v.s.status !== "planned") continue;
+    r.used = true;
+    v.s.status = "done";
+    flipped.push({ ...v, id: r.id });
+  }
+  const unresolved = past.filter((v) => v.s.status === "planned");
+  return { flipped, unresolved, unseen };
+}
+
+if (reconcileRoot) {
+  let records;
+  try {
+    records = loadReducedRecords(reconcileRoot);
+  } catch (e) {
+    console.error(`REFUSED: --reconcile could not read ${reconcileRoot}/raw/strava: ${e.message}`);
+    process.exit(1);
+  }
+  const r = reconcileAgainstRecords(payload, records, Date.now());
+  // 🔴 BY ADDRESS ON THE DEFAULT PATH, BY NAME ONLY UNDER --strict. The routine reports this whole
+  // stdout into a push notification and redacts exactly one line it was told about; a title printed
+  // here would be a name it has no rule for (see "the default path names no session" in the tests).
+  const who = (v) => strict ? `${v.path}  ${v.title.slice(0, 48)}` : v.path;
+  console.log(`reconcile ${records.length} reduced record(s) read from ${reconcileRoot}/raw/strava`);
+  for (const f of r.flipped) console.log(`          done      ${f.date}  ${who(f)}  [${f.id}]`);
+  for (const u of r.unresolved) console.log(`          planned   ${u.date}  ${who(u)}  no ${u.cls} record that day: not yet ingested, or not done. A person decides`);
+  for (const u of r.unseen) console.log(`          planned   ${u.date}  ${who(u)}  no instrument sees this kind of session`);
+  if (!r.flipped.length && !r.unresolved.length && !r.unseen.length) console.log("          nothing past is still planned");
 }
 
 const json = JSON.stringify(payload);

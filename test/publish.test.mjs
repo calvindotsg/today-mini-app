@@ -12,7 +12,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, writeFileSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -507,4 +507,149 @@ test("the default path names no session, because a cron reports its whole stdout
   // A person gets the name, because a person has to find the thing.
   const person = publishStrict(ws, "no-names-person");
   assert.match(person.err + person.out, /Sensitive Place Run/);
+});
+
+// ── --reconcile: past `planned` sessions against the wiki's reduced Strava records ──────────────
+//
+// The failure this guards is PR 529 in the wiki (issue 530): the 23:40 routine published Friday's
+// gym class as `planned` eleven hours after `raw/strava/` held its record. The routine is pure
+// transport by the athlete's ruling, so the repair is the one deterministic match the wiki's own
+// reconcile.py already makes -- same date, same class -- and nothing that needs a judgement.
+//
+// Dates are built off the clock, not hardcoded: "past" and "future" are what every branch here
+// reads, and a fixture pinned to a calendar date exercises only one of them after that date.
+const sgtDate = (offsetDays) => new Date(Date.now() + offsetDays * 86_400_000 + 8 * 3_600_000).toISOString().slice(0, 10);
+const YESTERDAY = sgtDate(-1);
+const TOMORROW = sgtDate(2);
+
+/** A wiki root holding only what --reconcile reads: raw/strava/<id>.json with sport and start_local. */
+function wikiWith(records, name) {
+  const root = join(TMP, `wiki-${name}`);
+  mkdirSync(join(root, "raw", "strava"), { recursive: true });
+  for (const r of records) {
+    writeFileSync(join(root, "raw", "strava", r.file ?? `${r.id}.json`),
+      JSON.stringify({ activity_id: String(r.id), sport: r.sport, start_local: r.start_local, distance_m: r.distance_m ?? 0 }));
+  }
+  return root;
+}
+
+/** PR 529's shape: a delivered Friday gym class, a commitment nothing can see, and a session still to come. */
+function week529() {
+  return weekState({
+    days: [
+      {
+        date: YESTERDAY, dow: "Friday", tag: "Rest",
+        sessions: [
+          { kind: "Gym 06:15", title: "Balanced 253", status: "planned",
+            at: `${YESTERDAY}T06:15`, until: `${YESTERDAY}T07:25`, place: "The gym", oneRule: "Learn the movements." },
+          { kind: "Commitment 19:00", title: "Collect your race pack", status: "planned",
+            at: `${YESTERDAY}T19:00`, until: `${YESTERDAY}T20:00`, place: "The shop", oneRule: "Bring the QR code." },
+        ],
+      },
+      {
+        date: TOMORROW, dow: "Saturday", tag: "Long run",
+        sessions: [
+          { kind: "Run 06:30", title: "Lion City 15 km", status: "planned", sport: "run",
+            at: `${TOMORROW}T06:30`, until: `${TOMORROW}T08:15`, place: "2 Stadium Walk", oneRule: "First 9 km with the group." },
+        ],
+      },
+    ],
+  });
+}
+
+function publishReconciled(ws, root, name, extra = []) {
+  const file = join(TMP, `${name}.json`);
+  writeFileSync(file, JSON.stringify(ws));
+  const r = spawnSync(process.execPath, [PUBLISH, file, "--reconcile", root, ...extra], {
+    encoding: "utf8", cwd: ROOT, env: sandboxEnv(join(TMP, "bin")),
+  });
+  const payload = existsSync(join(TMP, "dist", "payload.json"))
+    ? JSON.parse(readFileSync(join(TMP, "dist", "payload.json"), "utf8")) : null;
+  return { code: r.status, out: r.stdout ?? "", err: r.stderr ?? "", payload };
+}
+
+test("--reconcile publishes a delivered gym class as done, and leaves the commitment and the future run planned", () => {
+  const root = wikiWith([
+    { id: 20220486999, sport: "WeightTraining", start_local: `${YESTERDAY}T06:21:01` },
+    // A record dated on the FUTURE session's day, so a flag that forgot to check the clock would
+    // flip a session that has not happened -- the one thing worse than a stale `planned`.
+    { id: 20233828192, sport: "Run", start_local: `${TOMORROW}T06:48:35`, distance_m: 15701 },
+  ], "529");
+  const r = publishReconciled(week529(), root, "reconcile-529");
+  assert.equal(r.code, 0, r.err);
+  const [fri, sat] = r.payload.days;
+  assert.equal(fri.sessions[0].status, "done", "the class with a record on its date is done");
+  assert.equal(fri.sessions[1].status, "planned", "a commitment has no Strava class and is left alone");
+  assert.equal(sat.sessions[0].status, "planned", "a session still to come is never touched");
+  assert.match(r.out, /done\s+\S+\s+days\[0\]\.sessions\[0\]\s+\[20220486999\]/, "the flip names the record it rests on");
+  assert.match(r.out, /planned\s+\S+\s+days\[0\]\.sessions\[1\]\s+no instrument sees/, "the commitment is named as unresolvable, by address");
+  // Nothing else on the flipped session moved: the flag is a status flip, not an edit.
+  assert.equal(fri.sessions[0].oneRule, "Learn the movements.");
+  assert.equal(fri.sessions[0].place, "The gym");
+});
+
+test("--reconcile matches on class: a run on the same date does not deliver a gym class", () => {
+  const root = wikiWith([{ id: 20220486998, sport: "Run", start_local: `${YESTERDAY}T06:21:01`, distance_m: 6000 }], "class");
+  const r = publishReconciled(week529(), root, "reconcile-class");
+  assert.equal(r.code, 0, r.err);
+  assert.equal(r.payload.days[0].sessions[0].status, "planned");
+  assert.match(r.out, /planned\s+\S+\s+days\[0\]\.sessions\[0\]\s+no gym record that day/);
+});
+
+test("--reconcile never marks missed: a past run with no record stays planned and is reported", () => {
+  const ws = week529();
+  ws.days[0].sessions.push({ kind: "Run 19:20", title: "Club intervals", status: "planned", sport: "run",
+    at: `${YESTERDAY}T19:20`, until: `${YESTERDAY}T20:30`, place: "The stadium", oneRule: "Reps at threshold." });
+  // One run record that day, ten hours from the session: same class, same date, outside the
+  // three-hour window. It must not be taken as this session's.
+  const root = wikiWith([{ id: 20220486996, sport: "Run", start_local: `${YESTERDAY}T09:00:00`, distance_m: 5000 }], "far");
+  const r = publishReconciled(ws, root, "reconcile-missed");
+  assert.equal(r.code, 0, r.err);
+  assert.equal(r.payload.days[0].sessions[2].status, "planned", "a missing record is not evidence of a missed session");
+  assert.doesNotMatch(JSON.stringify(r.payload), /"missed"/, "the flag has no way to write missed at all");
+  assert.match(r.out, /planned\s+\S+\s+days\[0\]\.sessions\[2\]\s+no run record that day/);
+});
+
+test("--reconcile spends a record once: three runs on one date, the nearest start is the one delivered", () => {
+  const ws = week529();
+  // Listed morning first and the nearest one LAST, so list-order greed and nearest-first give
+  // different answers: only nearest-first delivers the 19:20 session.
+  ws.days[0].sessions.push(
+    { kind: "Run 06:30", title: "Morning shakeout", status: "planned", sport: "run",
+      at: `${YESTERDAY}T06:30`, until: `${YESTERDAY}T07:15`, place: "Home loop", oneRule: "Easy." },
+    { kind: "Run 18:30", title: "Early club run", status: "planned", sport: "run",
+      at: `${YESTERDAY}T18:30`, until: `${YESTERDAY}T19:30`, place: "The park", oneRule: "Easy." },
+    { kind: "Run 19:20", title: "Club intervals", status: "planned", sport: "run",
+      at: `${YESTERDAY}T19:20`, until: `${YESTERDAY}T20:30`, place: "The stadium", oneRule: "Reps at threshold." },
+  );
+  const root = wikiWith([
+    // The first fetch was filed as a Walk; the re-fetch under the newer stem corrected it to a Run.
+    // The newest stem is the one that counts, and two files are one record, not two.
+    { id: 20220486997, sport: "Walk", start_local: `${YESTERDAY}T19:41:00`, distance_m: 6288 },
+    { id: 20220486997, sport: "Run", start_local: `${YESTERDAY}T19:41:00`, distance_m: 6288, file: "20220486997--2026-09-19T00-00-00Z.json" },
+  ], "once");
+  const r = publishReconciled(ws, root, "reconcile-once");
+  assert.equal(r.code, 0, r.err);
+  assert.match(r.out, /reconcile 1 reduced record\(s\)/, "the newest stem wins; two files, one record");
+  assert.equal(r.payload.days[0].sessions[4].status, "done", "the 19:20 run is 21 minutes from the record");
+  assert.equal(r.payload.days[0].sessions[3].status, "planned", "the 18:30 run is 71 minutes from it, inside the window, and the record is spent");
+  assert.equal(r.payload.days[0].sessions[2].status, "planned", "the morning run is 13 hours from it and outside the window");
+});
+
+test("--reconcile without a wiki root is a usage error, and prints titles only under --strict", () => {
+  const file = join(TMP, "reconcile-noroot.json");
+  writeFileSync(file, JSON.stringify(week529()));
+  const bare = spawnSync(process.execPath, [PUBLISH, file, "--reconcile"], {
+    encoding: "utf8", cwd: ROOT, env: sandboxEnv(join(TMP, "bin")),
+  });
+  assert.equal(bare.status, 2);
+  assert.match(bare.stderr, /--reconcile needs the wiki root/);
+
+  // The cron reports its whole stdout into a push notification: a title on the default path is a
+  // name the routine has no rule to redact. By address there, by name only for a person.
+  const root = wikiWith([{ id: 20220486999, sport: "WeightTraining", start_local: `${YESTERDAY}T06:21:01` }], "names");
+  const cron = publishReconciled(week529(), root, "reconcile-names-cron");
+  assert.equal(cron.out.includes("Balanced 253"), false, "the default path prints no session title");
+  const person = publishReconciled(week529(), root, "reconcile-names-person", ["--strict"]);
+  assert.match(person.out, /days\[0\]\.sessions\[0\]\s+Balanced 253/);
 });
