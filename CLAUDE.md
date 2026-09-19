@@ -10,11 +10,11 @@ cost a session.
 
 | Task | Command |
 |---|---|
-| Test | `npm test` (197 tests) — **serialised**, see below |
+| Test | `npm test` (202 tests) — **serialised**, see below |
 | Auth suite only | `npm run test:auth` (Telegram) · `npm run test:web` (browser/PWA) |
 | Dev server | `npm run dev` |
 | Deploy | `npm run deploy` — CI also does this on merge to `main`, **behind an approval** (trap 2) |
-| Publish a week | `node scripts/publish.mjs <week.html> --put` |
+| Publish a week | `node scripts/publish.mjs <week.html> --put` — `--reconcile <wiki-root>` marks past `planned` sessions `done` from the wiki's `raw/strava/` records, and only that |
 
 ## Architecture
 

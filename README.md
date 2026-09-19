@@ -163,7 +163,7 @@ own `initData` against it, so every auth path is exercised without a real creden
 
 | Command | What it does |
 | --- | --- |
-| `npm test` | The whole suite, 197 tests |
+| `npm test` | The whole suite, 202 tests |
 | `npm run test:auth` | Just the Telegram HTTP auth suite, against the real Worker in the real runtime |
 | `npm run test:web` | The same, for the browser and home-screen way in |
 | `npm run dev` | `wrangler dev` on an emulated KV |
@@ -195,9 +195,21 @@ the app public on the day someone forgets a `wrangler secret put`.
 ## Publishing a week
 
 ```sh
-node scripts/publish.mjs ~/path/to/week.html --strict   # a person is running this
-node scripts/publish.mjs ~/path/to/week.html            # the nightly routine runs this
+node scripts/publish.mjs ~/path/to/week.html --strict                        # a person is running this
+node scripts/publish.mjs ~/path/to/week.html --reconcile ../hermes-training-wiki   # the nightly routine runs this
 ```
+
+**`--reconcile <wiki-root>` closes the gap between the artifact and the day.** The artifact is
+rewritten by a person, and a person is not always there before 23:40: on 2026-09-18 the nightly run
+published Friday's gym class as `planned` eleven hours after the wiki had ingested its Strava
+record. With the flag, a `planned` session whose time has passed and which has a reduced record of
+the **same class on the same date** in `<wiki-root>/raw/strava/` is published as `done`. That is
+the whole of it, on purpose: it never writes `missed` (a missing record means *not yet ingested*
+until a person says otherwise), it never touches a session still to come, it changes nothing but
+the status, and a session with no Strava class — a race-pack collection, a dinner — is left alone
+and named in the report, because no instrument can see it. The match is the one the wiki's own
+`scripts/reconcile.py` makes; the flag is arithmetic on completed activities, which is the routine's
+job, and not a judgement, which is not.
 
 🔴 **`--strict` is the difference between a person and a cron, and it exists because of what
 happens at 23:40.** The publisher measures how long every published field is, because the weekly
