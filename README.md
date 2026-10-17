@@ -6,7 +6,7 @@
 
 Hi, I am Calvin. I run and ride before sunrise, and a training assistant writes my week as a
 Claude artifact. This is the one screen that answers the only question I have at 6am, from inside
-my chat with [@calvindotsg_bot](https://t.me/calvindotsg_bot): **what's on today, and what time do
+my chat with [@weekly_cards_bot](https://t.me/weekly_cards_bot): **what's on today, and what time do
 I leave.**
 
 <picture>
@@ -163,7 +163,7 @@ own `initData` against it, so every auth path is exercised without a real creden
 
 | Command | What it does |
 | --- | --- |
-| `npm test` | The whole suite, 202 tests |
+| `npm test` | The whole suite, 204 tests |
 | `npm run test:auth` | Just the Telegram HTTP auth suite, against the real Worker in the real runtime |
 | `npm run test:web` | The same, for the browser and home-screen way in |
 | `npm run dev` | `wrangler dev` on an emulated KV |
@@ -255,8 +255,8 @@ successful `--put` also sends one message, with two buttons that open this app o
 
 | | |
 |---|---|
-| **Today** | `t.me/calvindotsg_bot/training?startapp=today` |
-| **Week** | `t.me/calvindotsg_bot/training?startapp=week` |
+| **Today** | `t.me/weekly_cards_bot/training?startapp=today` |
+| **Week** | `t.me/weekly_cards_bot/training?startapp=week` |
 
 Telegram delivers `startapp` twice: to the page as `tgWebAppStartParam` in the URL, and inside the
 signed launch data as `start_param`. The page reads both and prefers the signed one, which is the

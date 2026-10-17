@@ -6,6 +6,7 @@ import { mkdirSync, writeFileSync, chmodSync } from "node:fs";
 import { join, delimiter } from "node:path";
 
 export const FAKE_BOT_TOKEN = "123456:AAH-test-token-not-a-real-one";
+export const FAKE_CARDS_BOT_TOKEN = "654321:AAH-cards-test-token-not-a-real-one";
 // A STAND-IN, deliberately not the real id. The one allowed id lives only in the Worker secret,
 // so this repository carries no personal identifier and could be made public without a redaction
 // pass. The tests are exactly as strong with an arbitrary number: what they prove is that ONE id
