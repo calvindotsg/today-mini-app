@@ -134,7 +134,11 @@ export default {
     // Fail CLOSED on missing configuration. A Worker deployed without its secrets must refuse
     // everyone, not serve everyone -- an unset ALLOWED_USER_ID that read as "no restriction"
     // would make the app public on the day someone forgot a `wrangler secret put`.
-    const configured = typeof env.BOT_TOKEN === "string" && env.BOT_TOKEN.length > 0
+    // TWO BOTS, DURING THE HERMES SUNSET. Launches signed by Mochi (BOT_TOKEN) or by the Weekly
+    // cards bot (BOT_TOKEN_CARDS) are both accepted, so the cards token can be set before any link
+    // moves and nothing has a flag day. BOT_TOKEN goes once a cards-bot launch is proven.
+    const botTokens = [env.BOT_TOKEN, env.BOT_TOKEN_CARDS].filter((t) => typeof t === "string" && t.length > 0);
+    const configured = botTokens.length > 0
       && typeof env.ALLOWED_USER_ID === "string" && /^\d+$/.test(env.ALLOWED_USER_ID);
 
     // 🔴 A SEPARATE PREDICATE, AND THE SEPARATION IS LOAD-BEARING. The web secrets gate /web/* and
@@ -172,10 +176,16 @@ export default {
       // valid launch into `malformed-hash`, which is indistinguishable from an attack in the
       // response and from nothing at all in the logs.
       const initData = (await request.text()).trim().slice(0, 8192);
-      const result = await validateInitData(initData, env.BOT_TOKEN, {
-        nowMs: Date.now(),
-        maxAgeSeconds: MAX_INITDATA_AGE_SECONDS,
-      });
+      // Each configured token is tried; the first that validates wins. A launch signed by neither
+      // is refused exactly as before.
+      let result = { ok: false };
+      for (const token of botTokens) {
+        result = await validateInitData(initData, token, {
+          nowMs: Date.now(),
+          maxAgeSeconds: MAX_INITDATA_AGE_SECONDS,
+        });
+        if (result.ok) break;
+      }
       if (!result.ok) return deny();
 
       // THE ACCESS CONTROL. Everything above proves the launch came from this bot; only this

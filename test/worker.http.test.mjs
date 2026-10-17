@@ -11,7 +11,7 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { mintInitData, FAKE_BOT_TOKEN, ALLOWED_ID } from "./helpers.mjs";
+import { mintInitData, FAKE_BOT_TOKEN, FAKE_CARDS_BOT_TOKEN, ALLOWED_ID } from "./helpers.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PORT = 8799;
@@ -119,6 +119,16 @@ test("valid initData for Calvin -> 200 and the week, as JSON", async () => {
   assert.equal(view.week.days[0].tag, "ZZTAGZZ");
   assert.equal(view.week.days[0].bed.text, "ZZBEDZZ");
   assert.equal(view.week.days[0].sessions[0].sport, "run");
+});
+
+test("valid initData signed by the Weekly cards bot -> 200 and the week", async () => {
+  const res = await post(mintInitData({ userId: ALLOWED_ID, botToken: FAKE_CARDS_BOT_TOKEN }));
+  assert.equal(res.status, 200);
+  assert.equal(typeof (await res.json()).startParam, "string");
+});
+
+test("a cards-bot launch for a stranger is still refused -> 401, no content", async () => {
+  await assertDenied(await post(mintInitData({ userId: 999999999, botToken: FAKE_CARDS_BOT_TOKEN })), "cards-stranger");
 });
 
 test("valid signature, DIFFERENT user.id -> 401, no content", async () => {
