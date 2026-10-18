@@ -5,9 +5,9 @@
 //
 // The input is the weekly training artifact's HTML, saved to disk. It CANNOT be fetched by a
 // script: the artifact is a private Claude-account resource, so a cron on this Mac has no way to
-// read it and the box has no route to claude.ai at all. A Claude Code session saves the file and
-// runs this -- which is why the app treats "when was this published" as a first-class fact and
-// says so on screen rather than assuming freshness.
+// read it. A Claude Code session saves the file and runs this -- which is why the app treats
+// "when was this published" as a first-class fact and says so on screen rather than assuming
+// freshness.
 //
 // THE COMMENT TRAP. The artifact's own header comment names `id="week-state"` while explaining
 // the format, so a regex for that id finds the DOCUMENTATION before the data and parses prose as
@@ -27,21 +27,21 @@ const KV_KEY = "week:current";
 const WRANGLER = "wrangler@4.127.1"; // pinned. Bumping it is a decision: the runtime it bundles must support compatibility_date
 const SIZE_BUDGET = 24 * 1024;       // fail-closed ceiling, see README "Payload size"
 
-// ── THE NOTIFICATION ─────────────────────────────────────────────────────────────────────────
+// ── THE NOTIFICATION, WHICH THIS SCRIPT DOES NOT SEND ───────────────────────────────────────
 //
 // A published week that nobody is told about is a week he finds by opening the app on the off
-// chance. So a successful KV write also announces itself in Telegram, with the two Mini App
-// buttons -- and it happens HERE rather than as a step in the skill, for the reason the two gates
-// below already argue: a prose requirement lapses in silence and a command does not.
+// chance. So every run writes a summary envelope to dist/envelope.json (see THE ENVELOPE below),
+// and the announcement is built from that file -- but it is sent ELSEWHERE, never from here:
 //
-// 🔴 OVER SSH, NOT OVER HTTP, and that is the security design rather than a convenience. The
-// Hermes box carries a Hetzner firewall with ZERO rules and its gateway container sits on an
-// `internal: true` docker bridge with no published port; the tunnel's only two ingress rules are
-// the dashboard and ssh. Reaching the webhook adapter from the internet would have meant a new
-// public hostname -- and therefore a DNS record, which on calvin.sg must go through octoDNS in
-// portfolio-v2 or break its weekly drift gate -- plus a new Access application, to serve exactly
-// one caller that already has an Access-gated route in. `ssh-hermes` is that route. Nothing new
-// is exposed, and no secret lives on this side: the box signs with a key this repo never sees.
+//   publish.mjs -> dist/envelope.json -> the caller commits it to the private wiki as
+//   `announce/<stem>.json` on main -> the wiki's week-notify Action (`tools/week_notify.py`)
+//   sends it from the Weekly cards bot.
+//
+// This script holds no bot token and never contacts Telegram, directly or through another
+// machine. It used to pipe the envelope over ssh to the Hermes box, which sent the message; that
+// leg went with the box. `--no-notify` is still ACCEPTED, because the wiki's routine passes
+// it, and it is a no-op: there is nothing left here to skip.
+//
 // ── THE ARCHIVE ──────────────────────────────────────────────────────────────────────────────
 //
 // 🔴 dist/payload.json IS NOT A BACKUP, and on 2026-09-02 it was the only copy of a real week.
@@ -72,14 +72,11 @@ const DIST_DIR = process.env.TODAY_DIST_DIR || `${ROOT}/dist`;
 const DIST_LABEL = process.env.TODAY_DIST_DIR ? DIST_DIR : "dist";
 const ARCHIVE_KEEP = 12;   // ~3 months of weekly publishes, plus mid-week reconciles
 
-const SSH_HOST = "ssh-hermes";
-const NOTIFY_CMD = "bin/hermes-week-notify";
-const NOTIFY_TIMEOUT_MS = 60_000;
-
 const args = process.argv.slice(2);
 const file = args.find((a) => !a.startsWith("--"));
 const put = args.includes("--put");
-const noNotify = args.includes("--no-notify");
+// `--no-notify` is accepted and ignored: see THE NOTIFICATION above. It is not rejected as an
+// unknown flag, because the wiki's routine passes it and a refusal there would be an outage.
 // 🔴 WHO PASSES --strict, AND WHY IT IS NOT THE DEFAULT.
 //
 // `training-week-publish` runs this file at 23:40 every night and is PURE TRANSPORT: it cannot
@@ -662,26 +659,18 @@ mkdirSync(DIST_DIR, { recursive: true });
 writeFileSync(`${DIST_DIR}/payload.json`, json);
 console.log(`wrote     ${DIST_LABEL}/payload.json`);
 
-// ── THE ENVELOPE, WRITTEN HERE AND NOT IN THE NOTIFY LEG ─────────────────────────────────────
+// ── THE ENVELOPE ─────────────────────────────────────────────────────────────────────────────
 //
-// Built ONCE, before the `--put` gate, and reused verbatim by the notify leg below. Two reasons,
-// and the second is the one that changed the architecture:
+// Built ONCE, before the `--put` gate, and written on EVERY run, flags or not. 🔴 The unattended
+// path never passes `--put`: `training-week-publish` reduces, commits the payload to the private
+// wiki as `published/<stem>.json`, and a GitHub Action writes the edge store on merge. Before
+// 2026-09-02 `buildEnvelope` was unreachable on that path, and a week reached the phone with
+// nothing announcing it.
 //
-// 1. THE FILE AND THE MESSAGE MUST BE THE SAME BYTES. Building it twice would let the committed
-//    record of what was announced differ from what was actually announced — by a clock tick
-//    today, by a code path tomorrow. One build, one object, two consumers.
-//
-// 2. 🔴 THE UNATTENDED PATH NEVER REACHES THE NOTIFY LEG AT ALL. `training-week-publish` runs
-//    with no flags: it reduces, commits the payload to the private wiki as
-//    `published/<stem>.json`, and a GitHub Action writes the edge store on merge. `--put` is
-//    never passed, so until now `buildEnvelope` was unreachable on the only path that publishes
-//    unattended, and a week reached the phone with nothing announcing it.
-//
-//    The Hermes box cannot close that gap on its own side: it has NO node (measured 2026-09-02,
-//    `node: command not found`), and src/notify.js says in its own header why re-implementing
-//    this there would be wrong even if it did. So the routine copies this file to
-//    `announce/<same stem>.json` in the wiki, and a timer on the box reads it VERBATIM and feeds
-//    it to ~/bin/hermes-week-notify — the same tool, the same envelope, a different courier.
+// So the routine copies this file to `announce/<same stem>.json` in the wiki, and committing it
+// to main is what triggers the wiki's week-notify Action, which reads it VERBATIM and sends it
+// from the Weekly cards bot. The envelope is built only here, in node, so its shape has one
+// owner (src/notify.js) and the Action never re-derives it from the week.
 //
 // ⚠️ It is `dist/`, which is gitignored scratch: this app never commits an envelope. The public
 // repo must not hold session titles, places or leave-by times — that is the whole reason the
@@ -726,50 +715,9 @@ try {
   console.error("          The publish itself is fine. Recovery would fall back to KV.");
 }
 
-// ── and only now, tell him ───────────────────────────────────────────────────────────────────
+// ── and nothing is sent from here ────────────────────────────────────────────────────────────
 //
-// Everything above this line has already happened. The week IS at the edge, and the app WILL
-// serve it, whatever happens next -- so a failure here must never read as a failed publish.
-// That is why this is exit 3 and not exit 1, and why the line above stays printed. It is the
-// same split ~/bin/hermes-maintenance on that box had to learn: a process whose one failure code
-// means two different things forces the operator to guess which one they are looking at.
-if (noNotify) {
-  console.log("notify    skipped (--no-notify). Nothing has been sent to Telegram.");
-  process.exit(0);
-}
-
-try {
-  const out = execFileSync("ssh", ["-o", "BatchMode=yes", "-o", "ConnectTimeout=20", SSH_HOST, NOTIFY_CMD], {
-    input: JSON.stringify(envelope),
-    encoding: "utf8",
-    timeout: NOTIFY_TIMEOUT_MS,
-    // stderr is inherited so the box's own refusal text reaches the operator verbatim rather
-    // than being summarised by this script, which does not know what it means.
-    stdio: ["pipe", "pipe", "inherit"],
-  });
-  for (const line of out.trimEnd().split("\n")) console.log(line);
-  console.log(`notify    sent — next: ${envelope.next ? envelope.next.title : "(nothing ahead)"}`);
-} catch (e) {
-  console.error("");
-  console.error(`NOT NOTIFIED: ${e.message.split("\n")[0]}`);
-  console.error("The week IS published and the app is serving it. What failed is the message.");
-  // 🔴 WHETHER RE-RUNNING IS SAFE DEPENDS ON WHICH HALF FAILED, and the two are not the same
-  // mistake to make. The webhook wake is idempotent -- the box derives its delivery id from a
-  // hash of the envelope, and the adapter drops a repeat inside an hour. `sendMessage` is NOT:
-  // the Bot API has no such notion, so a re-run after a Telegram success posts a SECOND message.
-  // hermes-week-notify splits its codes precisely so this advice can be right rather than
-  // hedged: 3 means nothing was sent, 4 means the message went and only the wake did not.
-  if (e.status === 4) {
-    console.error("Its exit code says the Telegram message DID go out and only the agent wake");
-    console.error("failed. Do NOT re-run this — that would post the message a second time.");
-    console.error("The wake is what is missing, and it costs nothing to skip.");
-  } else if (e.status === 3) {
-    console.error("Its exit code says nothing was sent, so re-running is safe:");
-    console.error(`  node scripts/publish.mjs ${file} --put`);
-  } else {
-    console.error("It did not get far enough to say which half failed. `ssh ssh-hermes true`");
-    console.error("answers whether the box is reachable at all; check Telegram before re-running,");
-    console.error("because a re-run would post a second message if the first one landed.");
-  }
-  process.exit(3);
-}
+// Said out loud on every successful --put, so nobody waits for a message this script was never
+// going to send, and nobody re-runs it hoping to trigger one.
+console.log("notify    Nothing has been sent to Telegram. The wiki's week-notify Action announces");
+console.log("          the week when announce/<stem>.json is committed to its main branch.");

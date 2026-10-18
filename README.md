@@ -163,7 +163,7 @@ own `initData` against it, so every auth path is exercised without a real creden
 
 | Command | What it does |
 | --- | --- |
-| `npm test` | The whole suite, 204 tests |
+| `npm test` | The whole suite, 197 tests |
 | `npm run test:auth` | Just the Telegram HTTP auth suite, against the real Worker in the real runtime |
 | `npm run test:web` | The same, for the browser and home-screen way in |
 | `npm run dev` | `wrangler dev` on an emulated KV |
@@ -174,16 +174,19 @@ First-time setup of a fresh deployment:
 
 ```sh
 npx wrangler kv namespace create WEEK        # once; put the id in wrangler.jsonc
-npx wrangler secret put BOT_TOKEN            # the bot's token
+npx wrangler secret put BOT_TOKEN_CARDS      # the Weekly cards bot's token
 npx wrangler secret put ALLOWED_USER_ID      # the one Telegram user id allowed in
 npx wrangler deploy
 ```
+
+A deployment from before the Hermes sunset may still hold a `BOT_TOKEN` secret, the retired Mochi
+bot's. Nothing reads it; once this version is live, `npx wrangler secret delete BOT_TOKEN` removes it.
 
 ## Configuration
 
 | Where | What lives there |
 | --- | --- |
-| Worker **secrets** | `BOT_TOKEN`, `ALLOWED_USER_ID`. Never `vars` — one is the bot's whole identity, and the other is a personal identifier this repository has no reason to carry |
+| Worker **secrets** | `BOT_TOKEN_CARDS`, `ALLOWED_USER_ID`. Never `vars` — one is the bot's whole identity, and the other is a personal identifier this repository has no reason to carry |
 | `wrangler.jsonc` | The route, the KV binding, the compatibility date. No secrets, no observability — the only interesting request carries a launch credential, and the cheapest way to never log it is to log nothing |
 | GitHub environment `production` | `CLOUDFLARE_API_TOKEN` for the deploy, behind a branch policy limited to `main` |
 | GitHub variable | `CLOUDFLARE_ACCOUNT_ID` — a variable rather than a secret, because masking a value that appears in wrangler's own error output redacts unrelated log lines |
@@ -233,7 +236,7 @@ procedure is `cp dist/payload.json published/<new stem>`. That copied last week 
 while the operator read a refusal. It is a missing file now, which fails loudly.
 
 **A cron cannot do this.** The week lives in a private Claude artifact readable only by a Claude
-session — the box has no route to `claude.ai`, and a script on my Mac has no credential for it. So
+session, and a script on my Mac has no credential for it. So
 publishing is on demand, when the week's plan is written or revised.
 
 Which is exactly why the app treats freshness as something to **state** rather than assume. It
@@ -250,8 +253,9 @@ it is pushed and useless by Wednesday.
 
 ### And then it says so in Telegram
 
-A published week nobody is told about is a week found by opening the app on the off chance. So a
-successful `--put` also sends one message, with two buttons that open this app on the screen named:
+A published week nobody is told about is a week found by opening the app on the off chance. So each
+published week gets one message from the Weekly cards bot, with two buttons that open this app on
+the screen named:
 
 | | |
 |---|---|
@@ -273,28 +277,21 @@ Neither source is trusted as a value. `screenFor()` maps it through a closed set
 week, and everything else — an old link, a typo, a probe — opens today. Both screens render the
 same already-authorised week.
 
-🔴 **The message is sent by the Hermes box, not by this repo, and not over HTTP.** That box has a
-Hetzner firewall with **zero rules**, and its gateway container sits on an `internal: true` Docker
-bridge with **no published port**; the tunnel carries exactly two ingress rules, the dashboard and
-ssh. A public webhook endpoint would have meant a new hostname — and therefore a DNS record, which
-on `calvin.sg` must go through octoDNS in `portfolio-v2` or break its weekly drift gate — plus a
-new Access application, all to serve one caller that already had an Access-gated route in. So
-`publish.mjs` pipes a small envelope over that existing `ssh ssh-hermes` route into
-`~/bin/hermes-week-notify`, which signs and sends on the far side. **No Hermes credential exists on
-this side at all**, and nothing new is exposed to the internet.
+🔴 **The message is sent by the private wiki's `week-notify` Action, not by this repo.** Every
+publisher run writes a small envelope to `dist/envelope.json`: the label, the dates, the counts,
+and the one session that is next. The wiki's routine commits it as `announce/<stem>.json`, and a
+push that adds one to the wiki's `main` runs `week-notify.yml`, whose `tools/week_notify.py` sends
+it from the Weekly cards bot. **No bot token exists on this side at all**, and `publish.mjs`
+contacts nothing but Cloudflare. It used to pipe the envelope over ssh to the Hermes box, which
+sent the message; that leg went with the box.
 
-The envelope is a summary, not the week: the label, the dates, the counts, and the one session that
-is next. It has to be, because the box **cannot read `today.calvin.sg`** — `calvin.sg` is
-deliberately absent from its egress allowlist, so nothing over there can fetch what it was not sent.
+The envelope is a summary, not the week, because the Action reads **only the file** and never
+fetches `today.calvin.sg`. It is gitignored scratch here: session titles, places and leave-by times
+belong in the private wiki, not in this public repository.
 
-⚠️ **A notification failure is exit 3, not exit 1, and the difference is the point.** By then the
-week *is* at the edge and the app *is* serving it; reporting that as a failed publish invites a
-republish of something that published fine. The two halves are separated too, because `sendMessage`
-has no idempotency and a blind re-run posts a second message — so the box exits 3 when nothing was
-sent (safe to re-run) and 4 when the message went and only the agent wake did not (do not re-run).
-`--no-notify` skips the whole thing.
-
-**Nothing is sent without `--put`.** The dry run the weekly skill uses as its gate stays silent.
+After a successful `--put` the publisher says that nothing was sent and that the Action announces
+the week once `announce/<stem>.json` is on the wiki's `main`. `--no-notify` is still accepted,
+because the routine passes it, and does nothing.
 
 ### The archive, because `dist/` is not a backup
 
@@ -327,11 +324,11 @@ npm test          # 91 tests
   **an unknown key inside `bed`**, which the allowlist has to drop even though `pick` does not
   recurse. Each was checked by breaking the code it guards and watching it fail.
 - `test/publish.test.mjs` — the publisher's five content gates, by running the publisher.
-- `test/notify.test.mjs` — the envelope, and the wiring that sends it. The wiring half runs the
-  real `--put` path with **`npx` and `ssh` shimmed onto `PATH`**, so the publisher genuinely
-  spawns something, pipes the envelope into it and reads its exit code — only the far end is
-  fake, and nothing touches KV or the box. A source grep was the alternative and it passes on
-  code that is never reached.
+- `test/notify.test.mjs` — the envelope, and the wiring around it. The wiring half runs the real
+  `--put` path with **`npx` shimmed to succeed and `ssh` shimmed as a tripwire**, and proves the
+  publisher writes `dist/envelope.json` on every run and never spawns `ssh`. Nothing touches KV or
+  any remote host. A source grep was the alternative, and it cannot see a call made through a
+  helper.
 - `test/deeplink.test.mjs` — `?startapp=`, against the **shipped source**. `screenFor()` and
   `launchParams()` have to live inline in `src/app.html` (the page is one document, deliberately),
   so these tests cut the real functions out of the file and run them. A copy in a module would
@@ -359,7 +356,7 @@ ship on two independent tracks and either can be stale while the other is curren
 | `src/initdata.js` | Telegram signature validation. Deliberately small so it can be re-read against the docs in a minute |
 | `src/reduce.js` | week-state → the published payload. Two allowlists |
 | `src/view.js` | payload + a clock → what the one screen shows. Pure; no DOM |
-| `src/notify.js` | the reduced week → the summary envelope the Hermes box is sent. A named subset, never a spread |
+| `src/notify.js` | the reduced week → the summary envelope the wiki's week-notify Action sends. A named subset, never a spread |
 | `src/app.html` | The one screen, in the calvin.sg design system |
 | `scripts/publish.mjs` | The publisher |
 | `CONTRACT.md` | The `week-state` shape, **measured** across two artifacts. Read this before changing `reduce.js` |

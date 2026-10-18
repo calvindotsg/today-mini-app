@@ -1,12 +1,12 @@
-// The publish-time notification: the envelope, and the wiring that sends it.
+// The publish-time notification: the envelope, and the wiring around it.
 //
-// The wiring half runs the REAL `--put` path with `npx` and `ssh` shimmed onto PATH. Asserting it
-// with a source grep was the alternative and it is the weaker one -- a grep passes on code that is
-// never reached, which is precisely the failure this notification exists to prevent elsewhere in
-// this repo. The shims mean the publisher genuinely spawns something, genuinely pipes the envelope
-// into it, and genuinely reads its exit code; only the far end is fake.
+// The publisher only WRITES the envelope; the wiki's week-notify Action sends it. The wiring half
+// runs the REAL `--put` path with `npx` shimmed to succeed and `ssh` shimmed as a tripwire that
+// records any call. Asserting "no ssh" with a source grep was the alternative and it is the weaker
+// one -- a grep cannot see a call reached through a helper or a shell -- so these run the publisher
+// and check that nothing was spawned.
 //
-// ⚠️ NOTHING HERE TOUCHES KV OR THE BOX. `npx` is a no-op and `ssh` never leaves the temp dir.
+// ⚠️ NOTHING HERE TOUCHES KV OR ANY REMOTE HOST. `npx` is a no-op and `ssh` never leaves the temp dir.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -125,7 +125,7 @@ test("the envelope carries the week, the counts and one session — and no more"
 // 🔴 The reason `next` is picked field by field rather than spread. CONTRACT.md's whole thesis is
 // that the artifact grows fields without notice; a spread would ship each new one to a second
 // machine the first week it appeared, silently.
-test("an unknown session field is not forwarded to the box", () => {
+test("an unknown session field is not forwarded to the wiki", () => {
   const p = payload([day("2026-09-02", "Wednesday", [
     sess({ title: "ARC run", at: "2026-09-02T18:30", oneRule: "hold the pace", intention: "steady" }),
   ])]);
@@ -145,21 +145,21 @@ test("a week with nothing ahead still produces a valid envelope", () => {
 
 // ── the wiring ───────────────────────────────────────────────────────────────────────────────
 
-/** A PATH holding a no-op `npx` and an `ssh` that records its stdin and exits `sshExit`. */
-function shimBin(name, sshExit) {
+/** A PATH holding a no-op `npx` and an `ssh` TRIPWIRE that records it was called and fails loudly. */
+function shimBin(name) {
   const dir = join(TMP, name);
-  const record = join(dir, "stdin.json");
+  const record = join(dir, "ssh-called");
   spawnSync("mkdir", ["-p", dir]);
   writeFileSync(join(dir, "npx"), "#!/bin/sh\nexit 0\n");
   writeFileSync(join(dir, "ssh"),
-    `#!/bin/sh\ncat > ${record}\necho "telegram  message_id=1 entities=[] buttons=2"\nexit ${sshExit}\n`);
+    `#!/bin/sh\necho "$@" > ${record}\necho "REFUSED-SSH: the publisher has no ssh leg" >&2\nexit 97\n`);
   chmodSync(join(dir, "npx"), 0o755);
   chmodSync(join(dir, "ssh"), 0o755);
   return { dir, record };
 }
 
-function run(name, args, sshExit = 0) {
-  const { dir, record } = shimBin(name, sshExit);
+function run(name, args) {
+  const { dir, record } = shimBin(name);
   const file = join(TMP, `${name}.json`);
   writeFileSync(file, JSON.stringify({
     meta: { weekLabel: "W36", weekStart: "2026-08-31", weekEnd: "2026-09-06" },
@@ -183,7 +183,7 @@ function run(name, args, sshExit = 0) {
   const envelopeFile = join(process.env.TODAY_DIST_DIR, "envelope.json");
   return {
     code: r.status, out: r.stdout ?? "", err: r.stderr ?? "",
-    sent: existsSync(record) ? JSON.parse(readFileSync(record, "utf8")) : null,
+    sshCalled: existsSync(record),
     envelopeFile,
     wrote: existsSync(envelopeFile) ? JSON.parse(readFileSync(envelopeFile, "utf8")) : null,
     archive,
@@ -199,24 +199,28 @@ function run(name, args, sshExit = 0) {
 test("a run without --put sends nothing", () => {
   const r = run("dry", []);
   assert.equal(r.code, 0);
-  assert.equal(r.sent, null, "no ssh may be spawned at all");
+  assert.equal(r.sshCalled, false, "no ssh may be spawned at all");
   assert.match(r.out, /not published/);
 });
 
-test("--put sends the envelope on the notifier's stdin", () => {
+// 🔴 THE HERMES BOX IS GONE, AND SO IS THE LEG THAT REACHED IT. `--put` writes KV and the archive
+// and then says, in so many words, that nothing was sent and who sends it.
+test("--put never invokes ssh, and says the wiki's Action announces the week", () => {
   const r = run("put", ["--put"]);
-  assert.equal(r.code, 0);
-  assert.ok(r.sent, "the notifier must have been spawned and piped to");
-  assert.equal(r.sent.event_type, "week_published");
-  assert.equal(r.sent.week.start, "2026-08-31");
-  assert.equal(r.sent.next.title, "6 km with Bryan");
-  assert.match(r.out, /notify {4}sent/);
+  assert.equal(r.code, 0, r.err);
+  assert.equal(r.sshCalled, false, "the publisher must not spawn ssh");
+  assert.doesNotMatch(r.err, /REFUSED-SSH/);
+  assert.match(r.out, /published to the edge/);
+  assert.match(r.out, /Nothing has been sent to Telegram/);
+  assert.match(r.out, /week-notify Action/);
+  assert.match(r.out, /announce\/<stem>\.json is committed to its main branch/);
 });
 
 // ── the envelope as a FILE, which is the whole autonomous path ───────────────────────────────
 //
 // 📌 NEGATIVE CONTROLS, RUN AND RECORDED 2026-09-02 rather than run and discarded. This repo has
-// no mutation driver, so each guard below was put back the way it was by hand and the file re-run:
+// no mutation driver, so each guard below was put back the way it was by hand and the file re-run
+// (the file then also covered the ssh leg, since removed, so the counts are that day's):
 //
 //   remove the `writeFileSync(.../envelope.json)`      -> 3 red
 //   add a second `buildEnvelope(...)` call site        -> 1 red (the call-site assertion)
@@ -226,15 +230,15 @@ test("--put sends the envelope on the notifier's stdin", () => {
 // All four caught, subject restored, 27/27 green afterwards. A guard nobody has broken on purpose
 // is a claim, not evidence.
 //
-// 🔴 `training-week-publish` runs this publisher WITH NO FLAGS and never reaches the notify leg,
-// so before 2026-09-02 buildEnvelope was unreachable on the only path that publishes unattended
-// and a week arrived on the phone with nothing announcing it. The routine now copies this file
-// into the private wiki as `announce/<stem>.json`, and a timer on the Hermes box reads it
-// verbatim — that box has no node and could not build one itself.
+// 🔴 `training-week-publish` runs this publisher WITHOUT --put, so before 2026-09-02 buildEnvelope
+// was unreachable on the only path that publishes unattended and a week arrived on the phone with
+// nothing announcing it. The routine now copies this file into the private wiki as
+// `announce/<stem>.json`, and committing it to main triggers the week-notify Action, which reads
+// it verbatim.
 test("a run with no flags still writes the envelope, because that is the unattended path", () => {
   const r = run("envelope-dry", []);
   assert.equal(r.code, 0);
-  assert.equal(r.sent, null, "and it still sends nothing");
+  assert.equal(r.sshCalled, false, "and it still sends nothing");
   assert.ok(r.wrote, "dist/envelope.json must exist after a no-flag run");
   assert.equal(r.wrote.event_type, "week_published");
   assert.equal(r.wrote.week.start, "2026-08-31");
@@ -242,27 +246,13 @@ test("a run with no flags still writes the envelope, because that is the unatten
   assert.match(r.out, /wrote {5}.*envelope\.json/);
 });
 
-// 🔴 THE PROPERTY THAT MAKES THE FILE EVIDENCE: what is committed is what gets said. Built once
-// and handed to both consumers, so the record of the announcement cannot drift from the
-// announcement — not by a clock tick, and not by a second code path added later.
-test("the envelope on disk is byte-identical to the one piped to the notifier", () => {
-  const r = run("envelope-same", ["--put"]);
-  assert.equal(r.code, 0);
-  assert.ok(r.wrote && r.sent);
-  assert.deepEqual(r.wrote, r.sent);
-});
-
-// ⚠️ THE TEST ABOVE ASSERTS CONSISTENCY, NOT SINGLE-BUILD, and saying so is cheaper than letting
-// someone read it as the stronger claim. Re-adding a second `buildEnvelope(payload, Date.now())`
-// in the notify leg leaves it GREEN: every field of this fixture is stable across two clock
-// reads, so the two objects would still deep-equal. Measured, not assumed. The single-build
-// property has to be asserted where it lives — one call site in the publisher — which is
-// mechanical and does bite.
+// THE SINGLE-BUILD PROPERTY, asserted where it lives: one call site in the publisher. Two build
+// sites would let a later code path write a file that differs from the one the routine commits.
 test("the publisher builds the envelope exactly once", () => {
   const src = readFileSync(PUBLISH, "utf8");
   const calls = src.match(/buildEnvelope\(/g) ?? [];
   assert.equal(calls.length, 1,
-    "two build sites let the committed record of what was announced drift from what was sent");
+    "two build sites let the committed record of what was announced drift from what was built");
 });
 
 // It is a SUMMARY, and the boundary it crosses is a machine boundary. A field nobody renders is
@@ -276,35 +266,14 @@ test("the envelope file carries the summary and not the week", () => {
   assert.deepEqual(Object.keys(r.wrote.next).sort(), ["at", "leaveBy", "place", "title"]);
 });
 
-test("--no-notify publishes and says plainly that nothing was sent", () => {
+// `--no-notify` is a documented no-op, and it must stay ACCEPTED: the wiki's routine passes it, and
+// a refusal as an unknown flag would be an outage on the unattended path.
+test("--no-notify is still accepted, publishes, and sends nothing", () => {
   const r = run("quiet", ["--put", "--no-notify"]);
-  assert.equal(r.code, 0);
-  assert.equal(r.sent, null);
+  assert.equal(r.code, 0, r.err);
+  assert.equal(r.sshCalled, false);
   assert.match(r.out, /published to the edge/);
   assert.match(r.out, /Nothing has been sent to Telegram/);
-});
-
-// 🔴 The whole point of the split. The week is at the edge in every one of these; only the
-// message failed. Exit 1 would say the publish failed, and the operator would republish.
-test("a failed notification exits 3, and the publish still reports as done", () => {
-  const r = run("fail3", ["--put"], 3);
-  assert.equal(r.code, 3, "not 1 — the week published fine");
-  assert.match(r.out, /published to the edge/, "the successful publish must still be on stdout");
-  assert.match(r.err, /NOT NOTIFIED/);
-});
-
-// The two failures are not the same mistake to make, because sendMessage has no idempotency.
-test("exit 4 from the box means the message went, and says not to re-run", () => {
-  const r = run("fail4", ["--put"], 4);
-  assert.equal(r.code, 3);
-  assert.match(r.err, /Do NOT re-run/);
-  assert.doesNotMatch(r.err, /re-running is safe/);
-});
-
-test("exit 3 from the box means nothing was sent, and says re-running is safe", () => {
-  const r = run("fail3b", ["--put"], 3);
-  assert.match(r.err, /re-running is safe/);
-  assert.doesNotMatch(r.err, /Do NOT re-run/);
 });
 
 // ── the durable archive ──────────────────────────────────────────────────────────────────────
@@ -317,8 +286,8 @@ test("exit 3 from the box means nothing was sent, and says re-running is safe", 
 // still pass while quietly writing fixtures into ~/.local/state — a suite that looks green and
 // is corrupting the thing it is protecting.
 // 🔴 THE GUARD THAT WOULD HAVE CAUGHT THE LEAK. The per-helper redirect was correct and
-// insufficient: the ssh-leg test below assembles its own env, inherited the default archive path,
-// and wrote two fixture files into the real ~/.local/state/today-mini-app/published. An assertion
+// insufficient: a test that assembled its own env inherited the default archive path, and wrote
+// two fixture files into the real ~/.local/state/today-mini-app/published. An assertion
 // about ONE call site cannot see that. This one is about the whole file — every spawn of the
 // publisher in this suite must be pointed somewhere disposable, whoever wrote the spawn.
 test("no spawn in this file can reach the operator's real archive", () => {
@@ -365,15 +334,9 @@ test("a run without --put archives nothing", () => {
   assert.equal(r.archived.length, 0);
 });
 
-test("a failed notification still leaves the archive, because the week did publish", () => {
-  const r = run("archive-notify-fail", ["--put"], 3);
-  assert.equal(r.code, 3);
-  assert.equal(r.archived.length, 1, "the KV write succeeded, so the copy must exist");
-});
-
 // An archive that grows without bound is a different problem, not a solution.
 test("the archive keeps a bounded number of copies", () => {
-  const { dir } = shimBin("prune", 0);
+  const { dir } = shimBin("prune");
   const archive = join(TMP, "prune-archive");
   spawnSync("mkdir", ["-p", archive]);
   for (let i = 0; i < 20; i++) writeFileSync(join(archive, `2026-01-${String(i + 1).padStart(2, "0")}--x.json`), "{}");
@@ -392,17 +355,16 @@ test("the archive keeps a bounded number of copies", () => {
   assert.ok(kept.some((f) => f.startsWith("2026-08-31--")), "and the newest one survives");
 });
 
-// 🔴 THE SSH LEG, PROVEN INDEPENDENTLY. The incident on 2026-09-02 reached production TWICE: the
-// KV write, and then six real Telegram messages through `ssh ssh-hermes bin/hermes-week-notify`.
-// The first reproduction of it only proved the `npx` shim, because npx refuses FIRST and the
-// publisher dies before the ssh call -- so the ssh leg was bounded only transitively, which is a
-// claim about ordering rather than about the sandbox. Here npx SUCCEEDS, so execution genuinely
-// arrives at the ssh call, and the refusal has to come from the ssh shim itself.
-test("even when the KV write succeeds, the notifier cannot reach the box", () => {
+// 🔴 NO SSH LEG, PROVEN INDEPENDENTLY. The incident on 2026-09-02 reached production TWICE: the
+// KV write, and then six real Telegram messages through the publisher's old ssh leg to the Hermes
+// box. That leg is gone. Here npx SUCCEEDS, so execution genuinely runs to the end of a real
+// `--put`, and the `ssh` on PATH refuses loudly if anything calls it. A green run is the proof
+// that nothing did, not an artefact of the publisher dying early.
+test("even when the KV write succeeds, --put never reaches ssh", () => {
   const dir = join(TMP, "ssh-leg");
   spawnSync("mkdir", ["-p", dir]);
   writeFileSync(join(dir, "npx"), "#!/bin/sh\nexit 0\n");                       // the write "works"
-  writeFileSync(join(dir, "ssh"), "#!/bin/sh\necho REFUSED-SSH >&2\nexit 97\n"); // the box does not
+  writeFileSync(join(dir, "ssh"), "#!/bin/sh\necho REFUSED-SSH >&2\nexit 97\n"); // the tripwire
   chmodSync(join(dir, "npx"), 0o755);
   chmodSync(join(dir, "ssh"), 0o755);
 
@@ -418,13 +380,7 @@ test("even when the KV write succeeds, the notifier cannot reach the box", () =>
   });
 
   assert.match(r.stdout, /published to the edge/, "the KV write must have been allowed through");
-  assert.match(r.stderr, /REFUSED-SSH/, "and the ssh leg must be refused by the shim, not by ordering");
-  assert.equal(r.status, 3, "a refused notification is exit 3, never a failed publish");
-});
-
-test("an unreachable box is not reported as either half", () => {
-  const r = run("fail255", ["--put"], 255);
-  assert.equal(r.code, 3);
-  assert.match(r.err, /did not get far enough/);
-  assert.match(r.err, /ssh ssh-hermes true/);
+  assert.match(r.stdout, /Nothing has been sent to Telegram/, "and the run must have reached its end");
+  assert.doesNotMatch(r.stderr, /REFUSED-SSH/, "and ssh must never have been called");
+  assert.equal(r.status, 0);
 });

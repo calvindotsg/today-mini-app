@@ -78,7 +78,7 @@ function publish(ws, name) {
 
 // The control for the control. A sandbox nobody exercises is a sandbox nobody knows is wired --
 // this proves the shims are actually in front of PATH for the command these tests spawn.
-test("a spawned publisher cannot reach wrangler or the box", () => {
+test("a spawned publisher cannot reach wrangler or a remote host", () => {
   const r = spawnSync(process.execPath, ["-e", "require('child_process').execFileSync('npx',['--version'],{stdio:'inherit'})"],
     { encoding: "utf8", cwd: ROOT, env: sandboxEnv(join(TMP, "bin")) });
   assert.equal(r.status, 1, "the shim must make npx fail rather than run");

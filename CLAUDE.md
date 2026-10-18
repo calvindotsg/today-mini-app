@@ -10,7 +10,7 @@ cost a session.
 
 | Task | Command |
 |---|---|
-| Test | `npm test` (204 tests) — **serialised**, see below |
+| Test | `npm test` (197 tests) — **serialised**, see below |
 | Auth suite only | `npm run test:auth` (Telegram) · `npm run test:web` (browser/PWA) |
 | Dev server | `npm run dev` |
 | Deploy | `npm run deploy` — CI also does this on merge to `main`, **behind an approval** (trap 2) |
@@ -34,7 +34,7 @@ a Claude session ──► scripts/publish.mjs ──► Cloudflare KV ──►
 | `src/reduce.js` | `week-state` → the published payload. Four **allowlists**, so a new upstream field cannot start being published by accident. `BED_FIELDS` is one level down, because `pick` does not recurse. |
 | `src/view.js` | payload + a clock → what the two screens show. Pure, no DOM. |
 | `src/app.html` | Both screens, in the calvin.sg design system. Templated per request with a CSP nonce. |
-| `src/notify.js` | the published payload → the **summary envelope** the Hermes box is sent on a successful `--put`. A named subset picked field by field, never a spread — the artifact grows fields without notice, and a spread would ship each new one to a second machine the week it appeared. |
+| `src/notify.js` | the published payload → the **summary envelope**, written to `dist/envelope.json` on every run. The wiki commits it as `announce/<stem>.json` and its `week-notify` Action sends it from the Weekly cards bot; this repo sends nothing. A named subset picked field by field, never a spread — the artifact grows fields without notice, and a spread would ship each new one to a second system the week it appeared. |
 | `scripts/publish.mjs` | The publisher, and **five content gates**. Refusals: raw markup in a published field; a **wiki path or forecast id** (`models/pace-group`, `F-2026-09-04-a`) — bookkeeping he cannot open; an **abbreviation not spelled out**, satisfied by saying it in full in the same field. Warnings: anything reading like a revision of an earlier plan, and this store's **private vocabulary** (*board*, *anchor*, *dial*). 🔴 The split is the design — an exact shape may refuse, an English guess may only warn. |
 | `CONTRACT.md` | The `week-state` shape, **measured** rather than specified. Read before changing `reduce.js`. |
 
@@ -148,7 +148,7 @@ Pointing a browser at `wrangler dev` shows the "open this from your chat" card �
 `launchParams()` finds no `tgWebAppData` and never calls `/s`. To see a real screen:
 
 1. Mint a launch with `mintInitData({})` from `test/helpers.mjs`. Its `FAKE_BOT_TOKEN` matches
-   `.dev.vars.example`, so a local `wrangler dev` accepts it.
+   `BOT_TOKEN_CARDS` in `.dev.vars.example`, so a local `wrangler dev` accepts it.
 2. Put it in the **fragment**, encoded once:
    `http://127.0.0.1:<port>/#tgWebAppData=` + `encodeURIComponent(initData)`. `URLSearchParams`
    strips exactly one layer, and the `user` field's own percent-encoding has to survive.
@@ -238,7 +238,7 @@ superstring; it must be an exact match against an element of the array.
   error and two successful 200s in the log.
 - **`--ignore-scripts` before the specifier** in `.github/workflows/ci.yml`. npm passes everything
   after the package name to the package.
-- **`BOT_TOKEN` and `ALLOWED_USER_ID` are secrets, never `vars`**, and the Worker **fails closed**
+- **`BOT_TOKEN_CARDS` and `ALLOWED_USER_ID` are secrets, never `vars`**, and the Worker **fails closed**
   without them.
 
 ## Testing

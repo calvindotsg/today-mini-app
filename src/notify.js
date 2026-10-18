@@ -1,14 +1,14 @@
-// The envelope this app hands to the Hermes box when a week is published.
+// The envelope that announces a published week.
 //
-// It is a SUMMARY, not the week. The reduced payload is already at the edge and the box cannot
-// read it -- `calvin.sg` is deliberately absent from that box's egress allowlist, so nothing over
-// there can fetch today.calvin.sg to fill in a gap. That cuts both ways: the envelope has to
-// carry everything the notification says, and it must therefore carry NOTHING ELSE, because a
-// field that is never rendered is a field shipped to a second system for no reason.
+// It is a SUMMARY, not the week. The publisher writes it to dist/envelope.json, the caller
+// commits it to the private wiki as `announce/<stem>.json`, and the wiki's week-notify Action
+// (`tools/week_notify.py`) composes the Telegram message from it and sends it from the Weekly
+// cards bot. That consumer reads the envelope and nothing else -- it never fetches
+// today.calvin.sg -- so the envelope has to carry everything the message says, and it must
+// therefore carry NOTHING ELSE, because a field that is never rendered is a field shipped to a
+// second system for no reason.
 //
-// Consumed by ~/bin/hermes-week-notify on that box, which composes the Telegram message and
-// signs the same bytes for the gateway's webhook route. Changing a field name here is a
-// two-machine change.
+// Changing a field name here is a two-repo change: this file and the wiki's week_notify.py.
 
 import { parseSgt } from "./view.js";
 
@@ -49,12 +49,12 @@ export function nextActionable(payload, nowMs) {
 }
 
 /**
- * One line of English naming the next session, pre-rendered HERE rather than in the webhook
- * route's prompt template.
+ * One line of English naming the next session, pre-rendered HERE rather than in a consumer's
+ * template.
  *
- * ⚠️ Hermes leaves an unresolved `{dot.notation}` key as the LITERAL STRING (webhooks.md, "Prompt
- * Templates"). So a template written as `{next.title}` puts the characters `{next.title}` into
- * the agent's prompt on any week with nothing left in it. One always-present field cannot do that.
+ * ⚠️ Written for the Hermes box's webhook route, where an unresolved `{dot.notation}` key came
+ * out as the LITERAL STRING. That route is gone with the box and week_notify.py composes its own
+ * line from `next`; the field stays because removing it is a two-repo change for no gain.
  */
 export function nextLine(next) {
   if (!next) return "There is nothing further this week that he has to leave the house for.";
@@ -74,8 +74,8 @@ export function buildEnvelope(payload, nowMs) {
   const next = nextActionable(payload, nowMs);
 
   return {
-    // The route's `events` filter matches on this. A payload without it is answered 200
-    // "ignored" rather than run, so it is not decoration.
+    // week_notify.py refuses an envelope whose event_type is anything else (exit 1), so it is
+    // not decoration.
     event_type: "week_published",
     week: {
       label: meta.weekLabel ?? "",
@@ -88,7 +88,7 @@ export function buildEnvelope(payload, nowMs) {
     },
     // A NAMED SUBSET, never the session object. `pick`-by-hand for four fields: the artifact adds
     // fields without notice (CONTRACT.md's whole thesis), and spreading the session here would
-    // ship every future one to the box the first week it appears.
+    // ship every future one to the wiki and the Action the first week it appears.
     next: next
       ? {
           title: next.title,
@@ -98,8 +98,7 @@ export function buildEnvelope(payload, nowMs) {
         }
       : null,
     nextLine: nextLine(next),
-    // Stamped by publish.mjs at reduce time, so the box reports the age of the WEEK rather than
-    // the age of the message.
+    // Stamped by publish.mjs at reduce time: the age of the WEEK, not the age of the message.
     generatedAt: payload.generatedAt ?? "",
   };
 }

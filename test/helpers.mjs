@@ -5,8 +5,12 @@ import { createHmac } from "node:crypto";
 import { mkdirSync, writeFileSync, chmodSync } from "node:fs";
 import { join, delimiter } from "node:path";
 
-export const FAKE_BOT_TOKEN = "123456:AAH-test-token-not-a-real-one";
-export const FAKE_CARDS_BOT_TOKEN = "654321:AAH-cards-test-token-not-a-real-one";
+// The Weekly cards bot, the one bot the Worker trusts. FAKE, and it matches BOT_TOKEN_CARDS in
+// .dev.vars.example, so a local `wrangler dev` accepts what mintInitData() signs by default.
+export const FAKE_BOT_TOKEN = "654321:AAH-cards-test-token-not-a-real-one";
+// The retired Mochi bot's fake token, kept ONLY as a negative fixture: a launch it signs must be
+// refused now that the Worker reads BOT_TOKEN_CARDS alone.
+export const RETIRED_MOCHI_BOT_TOKEN = "123456:AAH-test-token-not-a-real-one";
 // A STAND-IN, deliberately not the real id. The one allowed id lives only in the Worker secret,
 // so this repository carries no personal identifier and could be made public without a redaction
 // pass. The tests are exactly as strong with an arbitrary number: what they prove is that ONE id
@@ -70,7 +74,8 @@ export function sandboxBin(dir) {
   mkdirSync(dir, { recursive: true });
   for (const [tool, why] of [
     ["npx", "wrangler/KV"],
-    ["ssh", "the Hermes box"],
+    // A TRIPWIRE now: the publisher has no ssh leg, so any call to it is a regression.
+    ["ssh", "a remote host (the publisher has no ssh leg)"],
     ["wrangler", "KV"],
   ]) {
     const p = join(dir, tool);
