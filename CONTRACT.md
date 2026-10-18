@@ -202,21 +202,25 @@ are not.
 They are Singapore time. Singapore has had a fixed **+08:00** since 1982 and no DST, so
 `src/view.js` reads them at a fixed offset: exact here, not an approximation.
 
-## There is now a SECOND consumer, and it is on another machine
+## There is a SECOND consumer, and it lives in another repository
 
-Since 2026-09-02 a successful `--put` also sends a Telegram message from the Hermes box, built
-from a summary envelope in `src/notify.js`. It reads five things and nothing else: `meta.weekLabel`,
+Every publisher run writes a summary envelope, built by `src/notify.js`, to `dist/envelope.json`.
+The wiki's routine commits it to the private wiki as `announce/<stem>.json`, and a push that adds
+one to `main` runs that repository's `week-notify.yml` Action, whose `tools/week_notify.py` sends
+the "your week is up" message from the Weekly cards bot. This app sends nothing itself.
+
+The envelope carries five things from the week and nothing else: `meta.weekLabel`,
 `meta.weekStart`, `meta.weekEnd`, the day and session counts, and the next **timed, `planned`**
-session's `title` / `at` / `leaveBy` / `place`.
+session's `title` / `at` / `leaveBy` / `place`. `week_notify.py` validates its shape
+(`event_type`, the three `week` strings, an integer `counts.sessions`, a string `next.title`) and
+refuses rather than sending something half-understood, which is the same posture `reduce.js` takes
+one step upstream.
 
-⚠️ **So renaming one of those is a two-machine change, not a two-file one.** The far end is
-`~/bin/hermes-week-notify` on the box, gated by `~/bin/test-hermes-week-notify.py`; it validates
-the envelope's shape and refuses rather than sending something half-understood, which is the same
-posture `reduce.js` takes one step upstream.
+⚠️ **So renaming an envelope field is a two-repo change, not a two-file one:** `src/notify.js`
+here and `tools/week_notify.py` in the wiki.
 
-The envelope carries a summary rather than the week because the box **cannot fetch
-`today.calvin.sg`** — `calvin.sg` is deliberately absent from that box's egress allowlist. Nothing
-over there can fill in a field it was not sent.
+The envelope carries a summary rather than the week because the consumer reads **only the file**;
+it never fetches `today.calvin.sg`, so it cannot fill in a field it was not sent.
 
 ## What this app publishes, and why the rest is dropped
 

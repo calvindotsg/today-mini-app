@@ -28,7 +28,7 @@
     { "binding": "WEEK", "id": "c7d4eafc77364e65a8907678076fb2ea" }
   ]
 
-  // No `vars`. BOT_TOKEN and ALLOWED_USER_ID are Worker SECRETS -- see README. Neither may ever
+  // No `vars`. BOT_TOKEN_CARDS and ALLOWED_USER_ID are Worker SECRETS -- see README. Neither may ever
   // appear in this file: it is committed, and one of them is the bot's whole identity.
   //
   // No `observability`. The only interesting request carries a launch credential in a header,
