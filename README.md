@@ -309,7 +309,7 @@ did.
 ## Testing
 
 ```sh
-npm test          # 91 tests
+npm test          # 197 tests
 ```
 
 - `test/initdata.test.mjs` — the signature algorithm, against `initData` minted the way **Telegram**
