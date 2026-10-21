@@ -211,9 +211,16 @@ try {
 //
 // The match is the one scripts/reconcile.py in the wiki already makes -- same DATE, same sport
 // CLASS -- restated here in a dozen lines rather than imported, because this file runs where that
-// script's interpreter may not. What counts as a class is deliberately coarse: run, ride, gym.
+// script's interpreter may not. What counts as a class is deliberately coarse: run, ride, gym, walk, swim.
 // A record's `sport` is Strava's sport_type; a session's class is its `sport` field when present,
 // else the first word of its `kind`. Anything that maps to neither is not reconcilable here.
+//
+// 🔴 RECORD_CLASS AND NOT_TRAINING ARE A COPY of the wiki's one shared list,
+// `.claude/skills/weekly-training-plan/scripts/kinds.py` (since 21 Oct 2026), and the wiki's
+// `tools/test_reconcile.py` reads this file at the commit the wiki pins and fails on any difference.
+// Change that file first, then this one, then the wiki's pin. A treadmill run recorded on the watch
+// reaches Strava as `Run` with the trainer flag, so `VirtualRun` is not a run here either: the wiki's
+// running week is Run + TrailRun.
 //
 // 🔴 THE NEWEST STEM PER ID WINS. A re-fetch lands as `<id>--<fetchedAt>.json` beside `<id>.json`;
 // globbing both would count one session twice, and a doubled morning reads like a real one.
@@ -222,15 +229,18 @@ try {
 // consume one record for two sessions. A record matches at most one session, the nearest by start
 // time and within three hours; the leftovers are printed, not decided.
 const RECORD_CLASS = {
-  run: new Set(["Run", "TrailRun", "VirtualRun"]),
+  run: new Set(["Run", "TrailRun"]),
   ride: new Set(["Ride", "VirtualRide", "GravelRide", "MountainBikeRide", "EBikeRide"]),
   gym: new Set(["WeightTraining", "Workout", "Crossfit", "HighIntensityIntervalTraining", "Elliptical", "StairStepper", "Rowing"]),
+  walk: new Set(["Walk", "Hike"]),
+  swim: new Set(["Swim"]),
 };
 const classOfRecord = (sport) => Object.keys(RECORD_CLASS).find((c) => RECORD_CLASS[c].has(sport)) ?? null;
 const classOfSession = (s) => {
-  if (s.sport === "run" || s.sport === "ride") return s.sport;
+  const sport = String(s.sport || "").toLowerCase();
+  if (Object.hasOwn(RECORD_CLASS, sport)) return sport;
   const w = String(s.kind || "").trim().split(/[\s·|,-]+/)[0].toLowerCase();
-  return w === "run" || w === "ride" || w === "gym" ? w : null;
+  return Object.hasOwn(RECORD_CLASS, w) ? w : null;
 };
 const naiveSgt = (iso) => new Date(`${iso.slice(0, 19)}+08:00`).getTime();
 
@@ -536,7 +546,9 @@ if (inputIsArtifact) {
 // and its failure mode is the bad one -- it does not refuse, it quietly extracts the wrong thing."
 // Listing what is NOT training means an unrecognised kind gets CHECKED and fails loudly, and the
 // fix is one word in this list.
-const NOT_TRAINING = ["bed", "wake", "scan", "social", "meeting", "appointment", "travel", "rest"];
+// The wiki's NO_ACTIVITY list (kinds.py): a session that leaves no Strava record, so no place or rule.
+const NOT_TRAINING = ["appointment", "bed", "check", "commitment", "evening", "kit", "meeting", "note", "pickup", "rest",
+  "scan", "social", "travel", "wake"];
 const kindWord = (s) => String(s.kind || "").trim().split(/[\s·|,-]+/)[0].toLowerCase();
 
 const training = [];
@@ -613,7 +625,7 @@ if (overLimit.length || overWords.length || missingCoverage.length || noFloor) {
     }
     out("  `place` is where to go and `oneRule` is the decision taken before the session starts;");
     out("  both are read at 06:15 with no chance to ask. A shorter page that drops them is not a");
-    out("  better page. If a session genuinely is not training, its kind belongs in NOT_TRAINING.");
+    out("  better page. If a session genuinely is not training, its kind belongs in the wiki's kinds.py and in NOT_TRAINING.");
   }
   if (noFloor) {
     out(`${verb} "${noFloor}" lists what gives way and never says what does not.`);
