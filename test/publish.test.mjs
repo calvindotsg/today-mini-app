@@ -410,6 +410,19 @@ test("a session that is not training is exempt, and the exemption is REPORTED", 
   assert.match(r.out, /1 exempt by kind/);
 });
 
+test("a session word the wiki lists as leaving no record is exempt too: Check, Commitment, Pickup", () => {
+  // The wiki's kinds.py is the one list; NOT_TRAINING copies it. W43's "Check 18:00" and W42's
+  // "Pickup 05:45" carry no place, and the publisher must not ask them for one.
+  for (const kind of ["Check 18:00", "Commitment · estate", "Pickup 05:45"]) {
+    const ws = weekState();
+    delete ws.days[0].sessions[0].place;
+    ws.days[0].sessions[0].kind = kind;
+    const r = publishStrict(ws, `floor-exempt-${kind.split(" ")[0].toLowerCase()}`);
+    assert.equal(r.code, 0, `${kind}: ${r.err}`);
+    assert.match(r.out, /1 exempt by kind/, kind);
+  }
+});
+
 test("numbers is counted and never refused, because a gym class publishes none", () => {
   // ⚠️ A FLOOR THAT DOES NOT TOLERATE A LEGITIMATE GAP IS A CEILING'S MIRROR IMAGE. Two BFT
   // classes in the live corpus publish no load or percentage at all, so `numbers` at 7/9 is
@@ -634,6 +647,24 @@ test("--reconcile spends a record once: three runs on one date, the nearest star
   assert.equal(r.payload.days[0].sessions[4].status, "done", "the 19:20 run is 21 minutes from the record");
   assert.equal(r.payload.days[0].sessions[3].status, "planned", "the 18:30 run is 71 minutes from it, inside the window, and the record is spent");
   assert.equal(r.payload.days[0].sessions[2].status, "planned", "the morning run is 13 hours from it and outside the window");
+});
+
+test("--reconcile classes match the wiki's kinds.py: a walk is delivered, a VirtualRun is not a run", () => {
+  const ws = week529();
+  ws.days[0].sessions.push(
+    { kind: "Walk · 19:30", title: "Evening walk", status: "planned",
+      at: `${YESTERDAY}T19:30`, until: `${YESTERDAY}T20:15`, place: "The park", oneRule: "Easy." },
+    { kind: "Run 06:00", title: "Early run", status: "planned", sport: "run",
+      at: `${YESTERDAY}T06:00`, until: `${YESTERDAY}T06:40`, place: "Home loop", oneRule: "Easy." },
+  );
+  const root = wikiWith([
+    { id: 20220486995, sport: "Walk", start_local: `${YESTERDAY}T19:35:00`, distance_m: 3000 },
+    { id: 20220486994, sport: "VirtualRun", start_local: `${YESTERDAY}T06:05:00`, distance_m: 5000 },
+  ], "classes");
+  const r = publishReconciled(ws, root, "reconcile-classes");
+  assert.equal(r.code, 0, r.err);
+  assert.equal(r.payload.days[0].sessions[2].status, "done", "a Walk record delivers a walk session");
+  assert.equal(r.payload.days[0].sessions[3].status, "planned", "a VirtualRun is not in the run class");
 });
 
 test("--reconcile without a wiki root is a usage error, and prints titles only under --strict", () => {

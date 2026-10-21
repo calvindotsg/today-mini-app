@@ -163,7 +163,7 @@ own `initData` against it, so every auth path is exercised without a real creden
 
 | Command | What it does |
 | --- | --- |
-| `npm test` | The whole suite, 197 tests |
+| `npm test` | The whole suite, 199 tests |
 | `npm run test:auth` | Just the Telegram HTTP auth suite, against the real Worker in the real runtime |
 | `npm run test:web` | The same, for the browser and home-screen way in |
 | `npm run dev` | `wrangler dev` on an emulated KV |
@@ -309,7 +309,7 @@ did.
 ## Testing
 
 ```sh
-npm test          # 197 tests
+npm test          # 199 tests
 ```
 
 - `test/initdata.test.mjs` — the signature algorithm, against `initData` minted the way **Telegram**
