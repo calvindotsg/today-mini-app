@@ -1,0 +1,138 @@
+#!/usr/bin/env bash
+# The merge gate: every merge-relevant check in this repo, one command (merge-on-green plan § 3.1, phase 3).
+#
+#   ./gate              run every check this machine can (local: fast and advisory)
+#   GATE_RUNNER=linux   what the hosted Linux job runs (the shared workflow in calvindotsg/.github sets it)
+#   GATE_RUNNER=macos   what the hosted macOS job runs: nothing here needs macOS, so 0 rows
+#
+# Last line: GATE <passed>/<total> failed=<n> notrun=<n> needs-calvin=<reason|none>
+# Exit 0 only with 0 failed, 0 not run, and nothing waiting on Calvin in CI.
+#
+# A check that belongs to the other platform is out of this run's total, never "not run". A check whose
+# tool is missing where it should run is "not run", and that fails the gate.
+#
+# What it wraps: ci.yml's `test-matrix` job (fanned in as the required `test` check), step for step:
+# cp .dev.vars.example .dev.vars, warm wrangler with npx, `npm test`. npm, not pnpm, because CI runs npm:
+# the repo declares zero dependencies and has no lockfile, so there is no install step to mirror.
+# The matrix runs node 22, 24 and 26; the gate runs the node on PATH, once.
+#
+# Out, not rows:
+#   - ci.yml `deploy` and `deploy-unconfigured`: push or dispatch on main only (post-merge), and deploy needs
+#     the production secret
+#   - drift.yml: weekly schedule and push to main (post-merge); it reads the live today.calvin.sg
+#   - `npm run dev`, `npm run deploy`, `npm run publish:week`: manual, need Cloudflare credentials
+# No local advisory checks: nothing in this repo tests this Mac.
+# macOS bash 3.2: no mapfile, no associative arrays.
+
+set -u
+cd "$(dirname "$0")" || exit 2
+
+RUNNER="${GATE_RUNNER:-local}"
+case "$RUNNER" in
+  linux|macos|local) ;;
+  *) echo "gate: GATE_RUNNER must be linux, macos or unset (got $RUNNER)" >&2; exit 2 ;;
+esac
+# gate-rules.py runs on the system Python 3.9 on a Mac; elsewhere python3 is what there is.
+PY=python3
+[ -x /usr/bin/python3 ] && [ "$(uname -s)" = Darwin ] && PY=/usr/bin/python3
+
+LOG="$(mktemp -d "${TMPDIR:-/tmp}/gate.XXXXXX")" || exit 2
+trap 'rm -rf "$LOG"' EXIT
+passed=0 failed=0 notrun=0 n=0
+needs="none"
+
+# applies <platforms>: true when this run includes a check for those platforms ("linux macos", "macos", ...).
+applies() {
+  case "$RUNNER" in
+    local) [ "$(uname -s)" = Darwin ] && return 0   # a Mac runs all; a Linux machine runs the Linux checks
+           case " $1 " in *" linux "*) return 0 ;; *) return 1 ;; esac ;;
+    *) case " $1 " in *" $RUNNER "*) return 0 ;; *) return 1 ;; esac ;;
+  esac
+}
+
+# check <name> <platforms> <tool> <command...>: run one check and tally it.
+check() {
+  local name="$1" where="$2" tool="$3"; shift 3
+  applies "$where" || return 0
+  n=$((n + 1))
+  if [ -n "$tool" ] && ! command -v "$tool" > /dev/null 2>&1; then
+    notrun=$((notrun + 1)); echo "notrun $name ($tool not found)"; return 0
+  fi
+  local t0=$SECONDS
+  if "$@" > "$LOG/$n" 2>&1; then
+    passed=$((passed + 1)); echo "ok     $name ($((SECONDS - t0)) s)"
+  else
+    failed=$((failed + 1)); echo "FAIL   $name ($((SECONDS - t0)) s)"; tail -20 "$LOG/$n" | sed 's/^/       /'
+  fi
+}
+
+# A suite's exit code alone passes a module under test that exits 0 on import: node --test then counts
+# each such file as one passing test. So the suite passes only with exit 0 AND node's own summary block as
+# its last lines ("tests N", "pass N", "fail 0", "cancelled 0", "skipped 0", "todo 0", then "duration_ms",
+# prefixed "ℹ" by the spec reporter or "#" by TAP), where N > 0 and N equals the number of top-level
+# test( declarations in test/*.test.mjs: the same static count test/docs.test.mjs pins the docs to.
+# node prints the summary as a block, so the last non-blank line is its duration_ms trailer, not a count.
+expected_tests() { cat test/*.test.mjs | grep -cE '^[[:space:]]*(await[[:space:]]+)?test\('; }
+summary_ok() { # summary_ok <log> <expected>
+  grep -v '^[[:space:]]*$' "$1" | tail -8 | awk -v want="$2" '
+    ($1 == "#" || $1 == "ℹ") && NF == 3 { v[$2] = $3; k[NR] = $2 }
+    END {
+      if (k[8] != "duration_ms") exit 1
+      if (want < 1 || v["tests"] != want || v["pass"] != want) exit 1
+      if (v["fail"] != "0" || v["cancelled"] != "0" || v["skipped"] != "0" || v["todo"] != "0") exit 1
+    }'
+}
+suite() { # suite <command...>: run it, then require exit 0 and a passing summary block
+  "$@" > "$LOG/suite" 2>&1; local rc=$? want
+  cat "$LOG/suite"
+  [ "$rc" = 0 ] || return 1
+  want="$(expected_tests)"
+  summary_ok "$LOG/suite" "$want" || {
+    echo "gate: exit 0 but no passing summary for $want tests (last line: $(grep -v '^[[:space:]]*$' "$LOG/suite" | tail -1))"
+    return 1; }
+}
+
+# ci.yml's "Provide the fake local secrets" step. A checkout without .dev.vars gets the example, as in CI.
+# An existing .dev.vars that differs is the developer's own file: never overwritten, and the suite would not
+# be testing what CI tests, so this row fails and says why.
+dev_vars() {
+  if [ ! -e .dev.vars ]; then cp .dev.vars.example .dev.vars && echo "created .dev.vars from .dev.vars.example"
+  elif cmp -s .dev.vars .dev.vars.example; then echo ".dev.vars equals .dev.vars.example"
+  else echo "gate: .dev.vars differs from .dev.vars.example (CI uses the example); move it aside and re-run"; return 1; fi
+}
+# ci.yml's "Warm the wrangler download" step, at the version ci.yml pins (read from it, not copied).
+# Its contract is the exit status: wrangler --version exits non-zero when it cannot be fetched or run.
+warm_wrangler() {
+  local v; v="$(sed -n 's/^  WRANGLER_VERSION: "\([0-9.]*\)"$/\1/p' .github/workflows/ci.yml)"
+  [ -n "$v" ] || { echo "gate: no WRANGLER_VERSION in ci.yml"; return 1; }
+  npx --yes --ignore-scripts "wrangler@$v" --version
+}
+rules_pinned() { [ "$("$PY" -c 'import hashlib, sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' scripts/gate/gate-rules.py)" = "$(cut -d' ' -f1 scripts/gate/gate-rules.sha256)" ]; }
+
+check ".dev.vars from the example"    "linux" ""   dev_vars
+check "wrangler warm (npx)"           "linux" npx  warm_wrangler
+check "npm test"                      "linux" npm  suite npm test
+check "gate-rules.py matches its pin" "linux" ""   rules_pinned
+
+# The needs-Calvin rules (plan § 3.4). Run only when the vendored copy matches its pin.
+if applies linux; then
+  n=$((n + 1))
+  if ! rules_pinned; then
+    notrun=$((notrun + 1)); echo "notrun needs-calvin rules (scripts/gate/gate-rules.py differs from its pin)"
+  else
+    "$PY" scripts/gate/gate-rules.py > "$LOG/rules" 2>&1; rc=$?
+    line="$(grep '^needs-calvin=' "$LOG/rules" | tail -1)"
+    case "$rc" in
+      0) passed=$((passed + 1)); echo "ok     needs-calvin rules ($line)" ;;
+      1) passed=$((passed + 1)); echo "ok     needs-calvin rules, waiting on Calvin ($line)" ;;
+      *) failed=$((failed + 1)); echo "FAIL   needs-calvin rules (cannot decide)" ;;
+    esac
+    sed 's/^/       /' "$LOG/rules"
+    reason="${line#needs-calvin=}"; reason="${reason% review=*}"
+    [ -n "$line" ] && [ "$reason" != none ] && needs="$reason"
+    [ "$rc" = 1 ] && rules_block=1
+  fi
+fi
+
+echo "GATE $passed/$n failed=$failed notrun=$notrun needs-calvin=$needs"
+[ "$failed" = 0 ] && [ "$notrun" = 0 ] && [ "${rules_block:-0}" = 0 ]
