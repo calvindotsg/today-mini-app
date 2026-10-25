@@ -14,7 +14,7 @@ cost a session.
 | Merge gate | `./gate` (CI's PR checks, one command); last line `GATE <passed>/<total> failed=<n> notrun=<n> needs-calvin=<reason\|none>` |
 | Auth suite only | `npm run test:auth` (Telegram) · `npm run test:web` (browser/PWA) |
 | Dev server | `npm run dev` |
-| Deploy | `npm run deploy` — CI also does this on merge to `main`, **behind an approval** (trap 2) |
+| Deploy | `npm run deploy` — CI also does this **at once** on merge to `main`, with no approval step (trap 2) |
 | Publish a week | `node scripts/publish.mjs <week.html> --put` — `--reconcile <wiki-root>` marks past `planned` sessions `done` from the wiki's `raw/strava/` records, and only that |
 
 ## Architecture
@@ -111,11 +111,14 @@ exactly this reason, so a stale copy still passes the Telegram suite and only th
 red. 🔴 **Do not fold them into `configured`.** That would turn a missing local file into this trap's
 misleading signature for every clone and worktree in existence.
 
-### 2. Merging is not shipping — the trap MOVED, it did not go away
+### 2. A merge to `main` ships at once — the only brake is you
 
 The Cloudflare credential landed 2026-09-01, so `deploy production` no longer skips. What replaced
-the old gap is an approval: 🔴 **the `production` environment requires a review**, so a merge sits
-waiting for a click, and until that click `main` is merged and the edge serves the previous commit.
+the old gap is a different risk: 🔴 **a merge to `main` deploys to production at once**, with no click
+in between. The `production` environment's only protection is its deployment-branch policy (`main`),
+which keeps `CLOUDFLARE_API_TOKEN` off every other ref. A required reviewer existed until 2026-09-08
+(the last approved run is 34187516607; none from 34189379992 on) and Calvin chose on 2026-10-26 to
+keep it off. So there is no second look: what you merge is live, and `drift.yml` is the backstop.
 
 ⚠️ **The alarm for that is now dead code.** `deploy (not configured)` — the job that printed *"main
 is merged but NOT shipped"* — fires only when `CLOUDFLARE_ACCOUNT_ID == ''`, which can never be true
@@ -129,7 +132,7 @@ gh run list --limit 3
 gh run view <id> --json jobs --jq '.jobs[] | "\(.name)\t\(.conclusion)"'
 ```
 
-`deploy production: success` is the proof; `pending`, `waiting` or absent means it has not shipped.
+`deploy production: success` is the proof; `pending`, `failure` or absent means it has not shipped.
 
 Separately, `scripts/publish.mjs` writes KV **directly**, from a laptop, not through this Worker.
 The page and the week ship on two independent tracks. CI now runs this digest check itself, but by

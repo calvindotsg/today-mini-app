@@ -97,11 +97,13 @@ Plan**, and in the test plan:
 
 ## Two things that are easy to get wrong
 
-**Merging is not shipping, and the gap has moved rather than closed.** CI deploys `main` to
-`today.calvin.sg` after the tests pass and asserts the edge is actually serving that commit — but
-🔴 **the `production` environment requires a review**, so a merge parks at *Waiting* until someone
-clicks. Until then `main` is merged and the edge serves the previous commit. Finishing a PR here
-means watching `deploy production` reach `success`, not watching the merge land:
+**Merging ships at once, so check that it did.** CI deploys `main` to
+`today.calvin.sg` after the tests pass and asserts the edge is actually serving that commit — and
+🔴 **it does so the moment a PR merges**: the `production` environment has no required reviewer, only
+a branch policy (`main`) that keeps `CLOUDFLARE_API_TOKEN` off other refs. A reviewer rule existed until
+2026-09-08; Calvin chose on 2026-10-26 to keep it off. Merging is therefore shipping, and a failed deploy
+leaves the edge on the previous commit. Finishing a PR here means watching `deploy production` reach
+`success`, not watching the merge land:
 
 ```sh
 gh run list --limit 3
