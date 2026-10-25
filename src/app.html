@@ -767,6 +767,13 @@ footer.credit{margin-top:1.75rem; color:var(--quieter); font-size:.6875rem}
 .bed .mc{color:var(--quieter); margin-right:.4em}
 .bed .plan{font-variant-numeric:tabular-nums; color:var(--text)}
 
+/* The week's Garmin lines, set like the bed line: they are what the night is measured by, so they
+   share its voice. On the week screen they sit under the gauge with its spacing below them. */
+.signals{list-style:none; margin:.75rem 0 0 0; padding:0; color:var(--quiet); font-size:.8125rem; line-height:1.5}
+.signals li + li{margin-top:.375rem}
+.signals .mc{color:var(--quieter); margin-right:.4em}
+.signals--week{margin:0 0 1.75rem 0}
+
 /* A day already spent, collapsed to one line that OPENS. The summary carries the whole target --
    full width and floored at 2.75rem, so it is a row a thumb finds rather than a word to hit. */
 .day--past{padding-bottom:0}
@@ -1648,6 +1655,23 @@ details[open] > summary .disc{transform:rotate(90deg)}
     return p;
   }
 
+  // The week's Garmin lines: sleep, heart rate variability, Garmin's own guess. One function for
+  // both screens, so the two cannot word them differently. Set like `bed` -- a label in tracked-out
+  // capitals, then the line -- because they are read beside tonight's bedtime, not as a session.
+  function renderSignals() {
+    if (!view.signals || !view.signals.length) return null;
+    var ul = el("ul", "signals");
+    ul.setAttribute("aria-label", "Garmin this week");
+    for (var i = 0; i < view.signals.length; i++) {
+      var s = view.signals[i];
+      var li = el("li");
+      if (typeof s.l === "string" && s.l) add(li, el("span", "mc", s.l));
+      li.appendChild(document.createTextNode(s.v));
+      add(ul, li);
+    }
+    return ul;
+  }
+
   function renderDay(d) {
     var cls = "day";
     if (d.phase === "past") cls += " day--past";
@@ -1763,7 +1787,8 @@ details[open] > summary .disc{transform:rotate(90deg)}
     }
     // Nothing to say, and no head to say it under. A day with a tag or a bedtime still has
     // something the hero cannot carry, so those alone are enough to draw the block.
-    if (!others.length && !d.bed && !d.tag) return null;
+    var signals = renderSignals();
+    if (!others.length && !d.bed && !d.tag && !signals) return null;
 
     var sec = el("section", "dayfull");
     sec.setAttribute("aria-current", "date");
@@ -1784,6 +1809,8 @@ details[open] > summary .disc{transform:rotate(90deg)}
     } else {
       add(sec, el("p", "pastline", heroKey ? "Nothing else today." : "Nothing planned today."));
     }
+    // Before the bed line, because the sleep line is the thing tonight's bedtime answers.
+    if (signals) add(sec, signals);
     if (d.bed) add(sec, renderBed(d.bed));
     return sec;
   }
@@ -1804,6 +1831,11 @@ details[open] > summary .disc{transform:rotate(90deg)}
     }
 
     add(root, renderGauge(w.volume || {}));
+    var signals = renderSignals();
+    if (signals) {
+      signals.className = "signals signals--week";
+      add(root, signals);
+    }
     // THE EXPLANATION THE TAB NOW OWES THE READER. The navigation stays drawn when a published
     // plan has no days in it, so this screen has to say why it is empty rather than simply being
     // empty -- an unexplained blank is indistinguishable from a page that failed to load, which is

@@ -199,6 +199,12 @@ export function buildView(payload, nowMs) {
     weekEnd: meta.weekEnd ?? null,
     plannedKm: meta.plannedKm ?? null,
     ceilingKm: meta.ceilingKm ?? null,
+    // The week's Garmin lines, drawn on BOTH screens. They are the week's facts, not a day's, so they sit
+    // here and not on a day row. Filtered again rather than trusted: KV can hold a payload older than the
+    // reducer that wrote this rule, and an entry with no line is nothing to draw.
+    signals: Array.isArray(meta.signals)
+      ? meta.signals.filter((s) => s && typeof s.v === "string" && s.v.trim() !== "")
+      : [],
     now: null,
     next: null,
     // Under way: `now` has started and has not finished. The card is still his, but "Leave by"

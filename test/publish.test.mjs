@@ -117,6 +117,31 @@ test("markup anywhere in the payload is refused, not just in sessions", () => {
   assert.match(r.err, /days\[0\]\.bed\.text/);
 });
 
+// The week's Garmin lines are a NEW published field, and the markup gate reaches them because it
+// walks every string in the payload rather than a list of field names. These two pin that.
+test("markup in one of the week's Garmin lines is refused, and the line is named", () => {
+  const ws = weekState();
+  ws.meta.signals = [{ l: "Sleep", v: "5 h 59 min a night &mdash; against your usual 5 h 02 min." }];
+  const r = publish(ws, "markup-signal");
+
+  assert.equal(r.code, 1, "a Garmin line carrying an entity must not publish");
+  assert.match(r.err, /meta\.signals\[0\]\.v/);
+});
+
+test("the week's Garmin lines reach the payload the app serves", () => {
+  const ws = weekState();
+  const lines = [
+    { l: "Sleep", v: "5 h 59 min asleep a night over the last 7 nights, against your usual 5 h 02 min." },
+    { l: "Heart rate variability", v: "7-day average 53, below Garmin's normal range of 54 to 73." },
+  ];
+  ws.meta.signals = lines;
+  const r = publish(ws, "signals");
+
+  assert.equal(r.code, 0, r.err);
+  const out = JSON.parse(readFileSync(join(TMP, "dist", "payload.json"), "utf8"));
+  assert.deepEqual(out.meta.signals, lines);
+});
+
 // THE GATE READS THE REDUCED PAYLOAD, NOT THE ARTIFACT -- which is the whole reason dropping a
 // field from the allowlist is a real fix rather than a cosmetic one. `note` is the field this was
 // found on: it carries <b> in the live week, and it is not published.

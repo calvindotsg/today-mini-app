@@ -10,7 +10,7 @@ cost a session.
 
 | Task | Command |
 |---|---|
-| Test | `npm test` (199 tests) — **serialised**, see below |
+| Test | `npm test` (204 tests) — **serialised**, see below |
 | Merge gate | `./gate` (CI's PR checks, one command); last line `GATE <passed>/<total> failed=<n> notrun=<n> needs-calvin=<reason\|none>` |
 | Auth suite only | `npm run test:auth` (Telegram) · `npm run test:web` (browser/PWA) |
 | Dev server | `npm run dev` |
@@ -32,7 +32,7 @@ a Claude session ──► scripts/publish.mjs ──► Cloudflare KV ──►
 | `src/initdata.js` | Telegram signature validation. Deliberately small so it can be re-read against the docs in a minute — do not spread it across helpers. |
 | `src/access.js` | Cloudflare Access JWT validation, for the browser way in. Small for the same reason. It PROVES the token; `worker.js` decides whose it is. 🔴 The account runs other Access apps on the same issuer and signing keys, so `aud` is the only thing separating their tokens from this one. |
 | `src/session.js` | The first-party session cookie the Worker mints after Access. Two lifetimes: 30-day sliding, 90-day hard ceiling anchored to first sign-in. |
-| `src/reduce.js` | `week-state` → the published payload. Four **allowlists**, so a new upstream field cannot start being published by accident. `BED_FIELDS` is one level down, because `pick` does not recurse. |
+| `src/reduce.js` | `week-state` → the published payload. Five **allowlists**, so a new upstream field cannot start being published by accident. `BED_FIELDS` and `SIGNAL_FIELDS` are one level down, because `pick` does not recurse. |
 | `src/view.js` | payload + a clock → what the two screens show. Pure, no DOM. |
 | `src/app.html` | Both screens, in the calvin.sg design system. Templated per request with a CSP nonce. |
 | `src/notify.js` | the published payload → the **summary envelope**, written to `dist/envelope.json` on every run. The wiki commits it as `announce/<stem>.json` and its `week-notify` Action sends it from the Weekly cards bot; this repo sends nothing. A named subset picked field by field, never a spread — the artifact grows fields without notice, and a spread would ship each new one to a second system the week it appeared. |
