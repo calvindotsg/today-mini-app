@@ -51,8 +51,17 @@ export const BED_FIELDS = ["plan", "kind", "text"];
 // "this plan does not cover today" instead of quietly showing nothing.
 export const META_FIELDS = [
   "weekLabel", "weekStart", "weekEnd", "plannedKm", "ceilingKm", "priorWeekKm",
-  "kiprunDate", "bydDate", "lastUpdated",
+  "kiprunDate", "bydDate", "lastUpdated", "signals",
 ];
+
+// `signals` is the week's Garmin lines -- sleep, heart rate variability, Garmin's own guess -- as
+// `[{l, v}]`, copied by the wiki's weekly-training-plan skill from `scripts/garmin.py week --json`.
+// 🔴 THE SAME ONE-LEVEL-DOWN ALLOWLIST AS `bed`, and for the same reason: `pick` does not recurse,
+// so naming "signals" in META_FIELDS alone would publish every key the skill ever adds to an entry.
+// An entry with no line is dropped, and the list is capped: three lines is the shape today, and a
+// phone screen is not where a fifth one should appear unannounced.
+export const SIGNAL_FIELDS = ["l", "v"];
+export const SIGNALS_MAX = 4;
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -89,6 +98,19 @@ export function reduceWeekState(ws, { generatedAt }) {
   }
   for (const d of ["weekStart", "weekEnd"]) {
     if (!ISO_DATE.test(meta[d])) throw new ContractError(`meta.${d} is not YYYY-MM-DD: ${meta[d]}`);
+  }
+  if (meta.signals !== undefined) {
+    const signals = [];
+    for (const entry of Array.isArray(meta.signals) ? meta.signals : []) {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
+      const s = pick(entry, SIGNAL_FIELDS);
+      // Strings only: the app prints both with textContent, and a number or an object here is a
+      // shape nobody agreed, not a line to show.
+      for (const f of SIGNAL_FIELDS) if (typeof s[f] !== "string") delete s[f];
+      if (s.v) signals.push(s);
+    }
+    if (signals.length > 0) meta.signals = signals.slice(0, SIGNALS_MAX);
+    else delete meta.signals;
   }
 
   const days = [];

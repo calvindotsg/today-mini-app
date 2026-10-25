@@ -451,6 +451,48 @@ test("an empty bed is dropped rather than published as an empty object", () => {
   assert.equal("bed" in out.days[1], false, "a bed that is not an object is not a bed");
 });
 
+// ── the week's Garmin lines ─────────────────────────────────────────────────────────────────
+//
+// `meta.signals` is the wiki's `scripts/garmin.py week --json`, copied into the artifact. The same
+// three lines as the plan page, so the two cannot say different things about the same week.
+
+const SIGNALS = [
+  { l: "Sleep", v: "5 h 59 min asleep a night over the last 7 nights, against your usual 5 h 02 min." },
+  { l: "Heart rate variability", v: "7-day average 53, below Garmin's normal range of 54 to 73." },
+  { l: "Garmin's guess", v: "Garmin's fitness score (VO2 max) 55 on 22 Oct. A second opinion that never sets a pace group." },
+];
+const META = { weekLabel: "x", weekStart: "2026-08-24", weekEnd: "2026-08-30" };
+
+test("the meta allowlist reaches inside each signal, and drops what it does not name", () => {
+  const out = reduceWeekState({
+    meta: { ...META, signals: [{ ...SIGNALS[0], night: "2026-08-23", source: "garmin-hrv/3" }, SIGNALS[1]] },
+    days: [],
+  }, { generatedAt: GEN });
+  assert.deepEqual(out.meta.signals, [SIGNALS[0], SIGNALS[1]],
+    "naming signals in META_FIELDS alone would publish every key the skill adds to an entry");
+});
+
+test("a signal with no line is dropped, a non-string is not a line, and the list stops at four", () => {
+  const five = [0, 1, 2, 3, 4].map((i) => ({ l: `L${i}`, v: `line ${i}` }));
+  const out = reduceWeekState({
+    meta: { ...META, signals: [{ l: "Sleep" }, { l: "Sleep", v: "  " }, { l: 7, v: 53 }, null, "Sleep", ...five] },
+    days: [],
+  }, { generatedAt: GEN });
+  assert.deepEqual(out.meta.signals, five.slice(0, 4));
+
+  const none = reduceWeekState({ meta: { ...META, signals: [{ l: "Sleep", v: "" }] }, days: [] }, { generatedAt: GEN });
+  assert.equal("signals" in none.meta, false, "a list with nothing to draw is an absent list, not []");
+  const notList = reduceWeekState({ meta: { ...META, signals: { l: "Sleep", v: "x" } }, days: [] }, { generatedAt: GEN });
+  assert.equal("signals" in notList.meta, false, "an object is not a list of lines");
+});
+
+test("the view carries the week's signals for both screens, and an older payload's bad entry is skipped", () => {
+  const v = buildView(payload([], { signals: [...SIGNALS, { l: "Sleep" }, { l: "x", v: "   " }] }), SGT("2026-08-24T06:00"));
+  assert.deepEqual(v.signals, SIGNALS, "KV can hold a payload older than the reducer's rule");
+  assert.deepEqual(buildView(payload([]), SGT("2026-08-24T06:00")).signals, [],
+    "absent is an empty list, so the renderer draws nothing");
+});
+
 // The mark set is closed, so an unknown sport is a MISSING ICON and not a broken week. Refusing
 // the publish over it would take the whole plan off the screen to avoid omitting one glyph.
 test("an unrecognised sport is dropped, and the session still publishes", () => {

@@ -78,6 +78,19 @@ itself. They are two short strings and are left on the allowlist deliberately, b
 gates what *may* cross rather than what must; but **a session filling `bydDate` and expecting to see
 it is filling nothing**, which is the "published but unread" trap `CLAUDE.md` names.
 
+### `meta.signals` — the week's Garmin lines, added 2026-10-26
+
+`[{ "l": "Sleep", "v": "5 h 59 min asleep a night over the last 7 nights…" }, …]` — the wiki's
+weekly-training-plan skill copies it from `scripts/garmin.py week --json`, so the app shows the
+same lines as the plan page: sleep, heart rate variability, and Garmin's VO2 max and marathon
+guess with their dates. It is **specified, not measured**: no artifact carried it before this
+date, so the sample tables above say nothing about it.
+
+`reduce.js` keeps `l` and `v` of each entry and only if they are strings, drops an entry with no
+`v`, keeps at most four, and drops the field when nothing is left. Both screens draw it: the week
+screen under the gauge, and the Today screen at the end of today's block, before the bed line.
+The lines are quoted figures; nothing in this app reasons about them.
+
 ## `days[]`
 
 Always 7 entries in all three. Present in all: `date` (`YYYY-MM-DD`), `dow`, `sessions`.
@@ -224,9 +237,10 @@ it never fetches `today.calvin.sg`, so it cannot fill in a field it was not sent
 
 ## What this app publishes, and why the rest is dropped
 
-`src/reduce.js` holds four allowlists — `SESSION_FIELDS`, `DAY_FIELDS`, `BED_FIELDS` and
-`META_FIELDS`. `BED_FIELDS` exists because `pick` does not recurse: naming `bed` in `DAY_FIELDS`
-alone would copy the whole object, unknown keys included. They are allowlists,
+`src/reduce.js` holds five allowlists — `SESSION_FIELDS`, `DAY_FIELDS`, `BED_FIELDS`,
+`META_FIELDS` and `SIGNAL_FIELDS`. `BED_FIELDS` and `SIGNAL_FIELDS` exist because `pick` does not
+recurse: naming `bed` in `DAY_FIELDS`, or `signals` in `META_FIELDS`, alone would copy the whole
+object, unknown keys included. They are allowlists,
 not deny-lists, so a **new** field appearing upstream cannot start being published by accident.
 Everything not on them stays in the artifact, including every field the artifact's own renderer
 treats as raw HTML.
