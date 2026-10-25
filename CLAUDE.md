@@ -11,6 +11,7 @@ cost a session.
 | Task | Command |
 |---|---|
 | Test | `npm test` (199 tests) — **serialised**, see below |
+| Merge gate | `./gate` (CI's PR checks, one command); last line `GATE <passed>/<total> failed=<n> notrun=<n> needs-calvin=<reason\|none>` |
 | Auth suite only | `npm run test:auth` (Telegram) · `npm run test:web` (browser/PWA) |
 | Dev server | `npm run dev` |
 | Deploy | `npm run deploy` — CI also does this on merge to `main`, **behind an approval** (trap 2) |
