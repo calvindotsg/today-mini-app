@@ -341,9 +341,10 @@ and would have passed even if the week screen printed no status word at all. The
 `src/view.js` instead, where a test can actually fail.
 
 CI runs the suite on Node 22, 24 and 26, then deploys `main` and asserts the edge is serving that
-exact commit. ⚠️ **The `production` environment requires a review**, so a merge does not ship on its
-own — it waits for an approval, and until that click `main` is merged and the edge is still serving
-the previous commit. `.github/workflows/drift.yml` catches that: it re-checks on **every push to
+exact commit. ⚠️ **A merge to `main` deploys at once**: the `production` environment has no required
+reviewer, only a branch policy (`main`) that keeps `CLOUDFLARE_API_TOKEN` off other refs (a reviewer
+rule existed until 2026-09-08; Calvin chose on 2026-10-26 to keep it off). If a deploy fails, `main` is
+merged and the edge is still serving the previous commit. `.github/workflows/drift.yml` is the backstop: it re-checks on **every push to
 `main`** and weekly, opening an issue when the edge and the tree disagree and closing it when they
 agree again. It exists because `scripts/publish.mjs` writes KV directly, so the page and the data
 ship on two independent tracks and either can be stale while the other is current.
