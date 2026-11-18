@@ -18,6 +18,12 @@ on:
         description: "Override the expected digest, to exercise the drift path on purpose."
         required: false
         type: string
+      # A hand start compares and reports, and opens, comments on or closes no issue unless it
+      # passes `-f dry_run=false` (Calvin, 13 Nov 2026). Schedule and push runs carry no inputs.
+      dry_run:
+        description: "Compare only, touch no issue. Set false to open, update or close the drift issue."
+        type: boolean
+        default: true
 
 # The push trigger is LOAD-BEARING, not belt-and-braces: GitHub disables scheduled workflows on
 # public repositories after 60 days of repository inactivity, and this repository has gone that
@@ -65,7 +71,7 @@ jobs:
           fi
 
       - name: Open or update the drift issue
-        if: steps.compare.outputs.drifted == 'true'
+        if: steps.compare.outputs.drifted == 'true' && (github.event_name != 'workflow_dispatch' || toJSON(inputs.dry_run) == 'false')
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           WANT: ${{ steps.compare.outputs.want }}
@@ -90,8 +96,9 @@ jobs:
             "| live | \`${GOT:-unreachable}\` |" \
             "" \
             "Merging is not shipping in this repository -- \`scripts/publish.mjs\` writes KV" \
-            "directly, and a laptop can still run \`npm run deploy\`. Re-run the CI workflow on" \
-            "\`main\` to redeploy, or investigate why the route is serving something else." \
+            "directly, and a laptop can still run \`npm run deploy\`. To redeploy, start CI with" \
+            "\`gh workflow run ci.yml --ref main -f dry_run=false\`, or investigate why the route" \
+            "is serving something else." \
             "" \
             "[Run log](${RUN_URL})")
           existing=$(gh issue list --state open --label deploy-drift --limit 1 --json number --jq '.[0].number // empty')
@@ -119,7 +126,7 @@ jobs:
       #
       # A no-op when nothing is open, which is the overwhelming majority of runs.
       - name: Close the drift issue once the edge agrees again
-        if: steps.compare.outputs.drifted == 'false'
+        if: steps.compare.outputs.drifted == 'false' && (github.event_name != 'workflow_dispatch' || toJSON(inputs.dry_run) == 'false')
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           WANT: ${{ steps.compare.outputs.want }}
@@ -143,6 +150,12 @@ jobs:
           gh issue comment "$existing" --body "$body"
           gh issue close "$existing" --reason completed
           echo "closed #${existing}" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Say that a dry run touched no issue
+        if: github.event_name == 'workflow_dispatch' && toJSON(inputs.dry_run) != 'false'
+        env:
+          DRIFTED: ${{ steps.compare.outputs.drifted }}
+        run: echo "::notice title=Dry run::drifted=${DRIFTED}; no issue was opened, updated or closed. Start with -f dry_run=false to act on it."
 
       - name: Fail the run so the drift is visible on the Actions tab too
         if: steps.compare.outputs.drifted == 'true'

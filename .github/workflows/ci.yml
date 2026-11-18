@@ -5,7 +5,13 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # A hand start runs the tests and deploys nothing unless it passes `-f dry_run=false` (Calvin, 13 Nov 2026).
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Test only, deploy nothing. Set false to deploy main."
+        type: boolean
+        default: true
 
 # Nothing in the test half writes to the repository, and the repository default for GITHUB_TOKEN
 # is `read` (setup-repo.sh pins it there). Declaring it anyway is what stops a future edit from
@@ -108,6 +114,10 @@ jobs:
     # The ref test is what stops a `workflow_dispatch` on a feature branch from shipping to
     # today.calvin.sg.
     #
+    # The last clause makes a hand start a dry run unless it passes `-f dry_run=false`. `toJSON`
+    # is load-bearing: `inputs.dry_run == false` is also true when the input is missing, because
+    # null and '' compare equal to false. Push events carry no inputs and pass on the first half.
+    #
     # The third clause is a CONFIGURATION GATE, not a guard. Creating the Cloudflare token needs an
     # interactive dashboard login, so there is a window where this workflow exists and the
     # credential does not. Failing through that window would paint `main` red for a reason that is
@@ -121,6 +131,7 @@ jobs:
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
       && github.ref == 'refs/heads/main'
       && vars.CLOUDFLARE_ACCOUNT_ID != ''
+      && (github.event_name != 'workflow_dispatch' || toJSON(inputs.dry_run) == 'false')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -204,6 +215,7 @@ jobs:
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
       && github.ref == 'refs/heads/main'
       && vars.CLOUDFLARE_ACCOUNT_ID == ''
+      && (github.event_name != 'workflow_dispatch' || toJSON(inputs.dry_run) == 'false')
     runs-on: ubuntu-latest
     steps:
       - name: Report that nothing was deployed
@@ -218,3 +230,13 @@ jobs:
             echo "\`main\` is merged but **not shipped** -- \`npm run deploy\` from a laptop is still"
             echo "the only thing putting this commit on the edge."
           } >> "$GITHUB_STEP_SUMMARY"
+
+  # A hand start that left `dry_run` at its default: say what it did not do.
+  deploy-dry-run:
+    name: deploy (dry run)
+    needs: [test]
+    if: github.event_name == 'workflow_dispatch' && toJSON(inputs.dry_run) != 'false'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report that nothing was deployed
+        run: echo "::notice title=Dry run::Tests ran on ${GITHUB_REF} at ${GITHUB_SHA}; nothing was deployed. Start with -f dry_run=false to deploy main."
