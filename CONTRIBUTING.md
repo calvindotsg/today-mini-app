@@ -114,8 +114,9 @@ gh run view <id> --json jobs --jq '.jobs[] | "\(.name)\t\(.conclusion)"'
 data ship on two independent tracks and either can be stale while the other is current.
 `.github/workflows/drift.yml` watches for exactly that, on every push to `main` and weekly.
 
-**A hand start of either workflow is a dry run.** `gh workflow run ci.yml` tests and deploys nothing,
-and `gh workflow run drift.yml` compares and touches no issue. Pass `-f dry_run=false` for the real
+**A hand start of either workflow is a dry run** unless it passes `-f dry_run=false`.
+`gh workflow run ci.yml -f dry_run=true` tests and deploys nothing, and
+`gh workflow run drift.yml -f dry_run=true` compares and touches no issue. Pass `-f dry_run=false` for the real
 run: `gh workflow run ci.yml --ref main -f dry_run=false` redeploys `main`.
 
 **A stranger's `initData` is cryptographically valid.** Telegram signs every launch with the same
