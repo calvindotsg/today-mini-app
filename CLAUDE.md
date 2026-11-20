@@ -211,7 +211,7 @@ superstring; it must be an exact match against an element of the array.
 
 ## Things that must not be "simplified"
 
-- 🔴 **ONE TEMPLATE TOKEN IN `src/app.html`, AND IT IS THE NONCE.** `ci.yml:185` and `drift.yml:51`
+- 🔴 **ONE TEMPLATE TOKEN IN `src/app.html`, AND IT IS THE NONCE.** `ci.yml`'s *Prove the edge* step and `drift.yml`'s *Compare* step
   both prove the deploy by hashing the source with only the nonce placeholder normalised, against the
   live page normalised on `nonce="..."` alone. A SECOND per-request substitution makes those digests
   disagree for ever: every deploy reports red while shipping fine, and `drift.yml` opens a

@@ -220,7 +220,7 @@ test("🔴 / and /web/ serve a BYTE-IDENTICAL document", async () => {
 });
 
 test("🔴 the deploy digest CI computes still matches the document this Worker serves", async () => {
-  // ci.yml:185 and drift.yml:51 hash `sed 's/__NONCE__/N/g' src/app.html` and compare it against
+  // ci.yml's "Prove the edge" step and drift.yml's "Compare" step hash `sed 's/__NONCE__/N/g' src/app.html` and compare it against
   // the live page normalised on `nonce="..."` alone. Any occurrence of that placeholder OUTSIDE a
   // nonce attribute -- in a COMMENT, say -- makes the two disagree for ever: every deploy reports
   // red while shipping fine, and drift.yml opens a Deploy-drift issue on every push to main.

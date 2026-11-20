@@ -17,8 +17,8 @@
 # The matrix runs node 22, 24 and 26; the gate runs the node on PATH, once.
 #
 # Out, not rows:
-#   - ci.yml `deploy` and `deploy-unconfigured`: push or dispatch on main only (post-merge), and deploy needs
-#     the production secret
+#   - ci.yml `deploy` and `deploy-unconfigured`: push, or a hand start with dry_run=false, on main only
+#     (post-merge), and deploy needs the production secret
 #   - drift.yml: weekly schedule and push to main (post-merge); it reads the live today.calvin.sg
 #   - `npm run dev`, `npm run deploy`, `npm run publish:week`: manual, need Cloudflare credentials
 # No local advisory checks: nothing in this repo tests this Mac.
